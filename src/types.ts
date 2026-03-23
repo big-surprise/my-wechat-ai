@@ -78,6 +78,13 @@ export interface ProviderOptions {
   allowedTools?: string[];
   /** Working directory for agent-type providers */
   cwd?: string;
+  /** MCP tools in OpenAI function calling format */
+  mcpTools?: Array<{
+    type: "function";
+    function: { name: string; description: string; parameters: Record<string, unknown> };
+  }>;
+  /** Callback to execute an MCP tool */
+  mcpCallTool?: (name: string, args: Record<string, unknown>) => Promise<string>;
 }
 
 export interface Provider {
@@ -120,6 +127,19 @@ export type Middleware = (ctx: Context, next: NextFunction) => Promise<void>;
 
 // ── Configuration ──
 
+export interface McpServerConfig {
+  /** Transport type: "stdio" (default), "sse", or "streamable-http" */
+  transport?: "stdio" | "sse" | "streamable-http";
+  /** Command to run (stdio) */
+  command?: string;
+  /** Command arguments (stdio) */
+  args?: string[];
+  /** Environment variables (stdio) */
+  env?: Record<string, string>;
+  /** Server URL (sse / streamable-http) */
+  url?: string;
+}
+
 export interface WebhookConfig {
   /** Enable webhook HTTP server */
   enabled?: boolean;
@@ -127,6 +147,15 @@ export interface WebhookConfig {
   port?: number;
   /** Optional secret token for authentication */
   secret?: string;
+}
+
+export interface SkillConfig {
+  /** Human-readable description */
+  description?: string;
+  /** System prompt override */
+  systemPrompt: string;
+  /** Provider override (optional, falls back to user's current provider) */
+  provider?: string;
 }
 
 export interface WaiConfig {
@@ -142,6 +171,12 @@ export interface WaiConfig {
   /** Per-user provider overrides: senderId -> providerName */
   userRoutes?: Record<string, string>;
 
+  /** Per-user active skill: senderId -> skillName */
+  userSkills?: Record<string, string>;
+
+  /** Skill presets */
+  skills?: Record<string, SkillConfig>;
+
   /** Global system prompt */
   systemPrompt?: string;
 
@@ -150,6 +185,9 @@ export interface WaiConfig {
 
   /** Webhook HTTP server config */
   webhook?: WebhookConfig;
+
+  /** MCP server configurations */
+  mcpServers?: Record<string, McpServerConfig>;
 }
 
 export interface ProviderConfig {

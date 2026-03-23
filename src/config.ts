@@ -59,6 +59,20 @@ const DEFAULT_CONFIG: WaiConfig = {
   },
   systemPrompt: "You are a helpful AI assistant. Respond concisely.",
   chunkSize: 4000,
+  skills: {
+    translator: {
+      description: "中英翻译助手",
+      systemPrompt: "You are a professional translator. Translate Chinese to English and English to Chinese. Only output the translation, no explanations.",
+    },
+    coder: {
+      description: "编程助手",
+      systemPrompt: "You are a senior software engineer. Help with coding questions. Be concise and provide code examples.",
+    },
+    writer: {
+      description: "写作助手",
+      systemPrompt: "You are a skilled writer. Help with writing, editing, and polishing text. Match the user's language.",
+    },
+  },
 };
 
 export async function ensureDir(dir: string) {

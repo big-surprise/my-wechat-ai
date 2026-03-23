@@ -12,6 +12,7 @@ import type {
 import { WeixinChannel } from "./channels/weixin.js";
 import { ClaudeAgentProvider } from "./providers/claude-agent.js";
 import { OpenAICompatibleProvider } from "./providers/openai-compatible.js";
+import { McpManager } from "./mcp.js";
 
 const log = createLogger("网关");
 
@@ -36,6 +37,8 @@ export class Gateway {
   private middlewares: Middleware[] = [];
   // Webhook HTTP server
   private webhookServer: Server | null = null;
+  // MCP client manager
+  private mcp = new McpManager();
 
   constructor(config: WaiConfig) {
     this.config = config;
@@ -88,6 +91,15 @@ export class Gateway {
       throw new Error("未配置任何模型");
     }
 
+    // Connect MCP servers
+    if (this.config.mcpServers && Object.keys(this.config.mcpServers).length > 0) {
+      await this.mcp.connect(this.config.mcpServers);
+      const toolCount = this.mcp.getTools().length;
+      if (toolCount > 0) {
+        log.info(`MCP: ${toolCount} 个工具已就绪`);
+      }
+    }
+
     this.startWebhook();
 
     const startPromises = [...this.channels.entries()].map(([name, channel]) => {
@@ -106,6 +118,7 @@ export class Gateway {
       this.webhookServer.close();
       this.webhookServer = null;
     }
+    await this.mcp.disconnect();
     const stops = [...this.channels.values()].map((ch) => ch.stop());
     await Promise.allSettled(stops);
     log.info("已关闭");
@@ -178,10 +191,16 @@ export class Gateway {
     this.processing.add(key);
 
     try {
-      const providerName = this.config.userRoutes?.[msg.senderId]
-        || this.config.defaultProvider;
       const channel = this.channels.get(msg.channel);
       if (!channel) return;
+
+      // Resolve skill overrides
+      const activeSkillName = this.config.userSkills?.[msg.senderId];
+      const activeSkill = activeSkillName ? this.config.skills?.[activeSkillName] : undefined;
+
+      const providerName = activeSkill?.provider
+        || this.config.userRoutes?.[msg.senderId]
+        || this.config.defaultProvider;
 
       const ctx: Context = {
         message: msg,
@@ -206,8 +225,14 @@ export class Gateway {
         }
 
         const options: ProviderOptions = {};
-        if (this.config.systemPrompt) {
-          options.systemPrompt = this.config.systemPrompt;
+        // Skill system prompt takes priority over global
+        options.systemPrompt = activeSkill?.systemPrompt || this.config.systemPrompt;
+
+        // Pass MCP tools if available
+        const mcpTools = this.mcp.getOpenAITools();
+        if (mcpTools.length > 0) {
+          options.mcpTools = mcpTools;
+          options.mcpCallTool = (name, args) => this.mcp.callTool(name, args);
         }
 
         c.response = await provider.query(c.message.text, c.sessionKey, options);
@@ -373,12 +398,57 @@ export class Gateway {
         break;
       }
 
+      case "/skill": {
+        const skills = this.config.skills || {};
+        const skillNames = Object.keys(skills);
+
+        if (!arg) {
+          const current = this.config.userSkills?.[msg.senderId] || "无";
+          const list = skillNames.length > 0
+            ? skillNames.map((k) => `  ${k} - ${skills[k]!.description || "无描述"}`).join("\n")
+            : "  (未配置任何技能)";
+          await channel.send({
+            targetId: msg.senderId,
+            text: `当前技能: ${current}\n可用技能:\n${list}\n用法: /skill <名称> 或 /skill off`,
+            replyToken: msg.replyToken,
+          });
+        } else if (arg.toLowerCase() === "off") {
+          if (this.config.userSkills) {
+            delete this.config.userSkills[msg.senderId];
+          }
+          await channel.send({
+            targetId: msg.senderId,
+            text: "已关闭技能，恢复默认模式",
+            replyToken: msg.replyToken,
+          });
+        } else if (skills[arg.toLowerCase()]) {
+          const skillName = arg.toLowerCase();
+          if (!this.config.userSkills) this.config.userSkills = {};
+          this.config.userSkills[msg.senderId] = skillName;
+          const skill = skills[skillName]!;
+          const info = skill.provider ? `(模型: ${skill.provider})` : "";
+          await channel.send({
+            targetId: msg.senderId,
+            text: `已切换到技能: ${skillName} ${info}\n${skill.description || ""}`,
+            replyToken: msg.replyToken,
+          });
+        } else {
+          await channel.send({
+            targetId: msg.senderId,
+            text: `未知技能: ${arg}\n可用: ${skillNames.join(", ") || "无"}`,
+            replyToken: msg.replyToken,
+          });
+        }
+        break;
+      }
+
       case "/help": {
         await channel.send({
           targetId: msg.senderId,
           text: [
             "wechat-ai 指令:",
             "/model [名称] - 切换AI模型",
+            "/skill [名称] - 切换技能 (off 关闭)",
             "/help - 显示帮助",
             "/ping - 检查状态",
           ].join("\n"),
