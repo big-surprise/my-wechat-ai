@@ -12,11 +12,23 @@ import { OpenAICompatibleProvider } from "./providers/openai-compatible.js";
 
 const log = createLogger("网关");
 
+const DEBOUNCE_MS = 1500;
+
+interface MessageBuffer {
+  messages: InboundMessage[];
+  timer: ReturnType<typeof setTimeout>;
+}
+
 export class Gateway {
   private channels = new Map<string, Channel>();
   private providers = new Map<string, Provider>();
   private config: WaiConfig;
+  // Debounce buffer: accumulates messages within DEBOUNCE_MS window
+  private buffers = new Map<string, MessageBuffer>();
+  // Whether AI is currently processing for a given user
   private processing = new Set<string>();
+  // Queue for messages that arrive while AI is processing
+  private queues = new Map<string, InboundMessage[]>();
 
   constructor(config: WaiConfig) {
     this.config = config;
@@ -80,22 +92,73 @@ export class Gateway {
     log.info("已关闭");
   }
 
-  private async handleMessage(msg: InboundMessage): Promise<void> {
-    const lockKey = `${msg.channel}:${msg.senderId}`;
-
-    if (this.processing.has(lockKey)) {
-      log.warn(`跳过消息 (上条仍在处理)`);
+  private handleMessage(msg: InboundMessage): void {
+    // Commands bypass debounce, execute immediately
+    if (msg.text.startsWith("/")) {
+      this.handleCommand(msg);
       return;
     }
 
-    this.processing.add(lockKey);
+    const key = `${msg.channel}:${msg.senderId}`;
+
+    // If AI is processing, queue the message
+    if (this.processing.has(key)) {
+      const queue = this.queues.get(key) || [];
+      queue.push(msg);
+      this.queues.set(key, queue);
+      log.info(`消息已排队 (AI处理中), 队列长度: ${queue.length}`);
+      return;
+    }
+
+    // Debounce: accumulate messages within time window
+    const existing = this.buffers.get(key);
+    if (existing) {
+      clearTimeout(existing.timer);
+      existing.messages.push(msg);
+      existing.timer = setTimeout(() => this.flushBuffer(key), DEBOUNCE_MS);
+    } else {
+      this.buffers.set(key, {
+        messages: [msg],
+        timer: setTimeout(() => this.flushBuffer(key), DEBOUNCE_MS),
+      });
+    }
+  }
+
+  private async flushBuffer(key: string): Promise<void> {
+    const buf = this.buffers.get(key);
+    if (!buf || buf.messages.length === 0) return;
+    this.buffers.delete(key);
+
+    // Merge all buffered messages into one
+    const merged = this.mergeMessages(buf.messages);
+    await this.processMessage(merged);
+
+    // After processing, check if there are queued messages
+    const queue = this.queues.get(key);
+    if (queue && queue.length > 0) {
+      this.queues.delete(key);
+      // Feed queued messages back through debounce
+      for (const msg of queue) {
+        this.handleMessage(msg);
+      }
+    }
+  }
+
+  private mergeMessages(messages: InboundMessage[]): InboundMessage {
+    if (messages.length === 1) return messages[0]!;
+
+    const last = messages[messages.length - 1]!;
+    const mergedText = messages.map((m) => m.text).join("\n");
+    log.info(`合并 ${messages.length} 条消息`);
+
+    return { ...last, text: mergedText };
+  }
+
+  private async processMessage(msg: InboundMessage): Promise<void> {
+    const key = `${msg.channel}:${msg.senderId}`;
+    this.processing.add(key);
 
     try {
-      if (msg.text.startsWith("/")) {
-        await this.handleCommand(msg);
-        return;
-      }
-
       const providerName = this.config.userRoutes?.[msg.senderId]
         || this.config.defaultProvider;
       const provider = this.providers.get(providerName);
@@ -107,7 +170,6 @@ export class Gateway {
 
       log.info(`调用 ${providerName} 处理中...`);
 
-      // 发送"正在输入"状态
       const channel = this.channels.get(msg.channel);
       if (channel && "sendTyping" in channel) {
         (channel as any).sendTyping(msg.senderId, msg.replyToken);
@@ -147,7 +209,7 @@ export class Gateway {
         // swallow
       }
     } finally {
-      this.processing.delete(lockKey);
+      this.processing.delete(key);
     }
   }
 

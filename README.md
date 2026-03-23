@@ -110,6 +110,18 @@ src/
 - [ ] Telegram / Discord 渠道
 - [ ] MCP 支持
 
+## API Key 获取
+
+| 模型 | 申请地址 |
+|------|---------|
+| 通义千问 (Qwen) | https://dashscope.console.aliyun.com/apiKey |
+| DeepSeek | https://platform.deepseek.com/api_keys |
+| Claude | https://console.anthropic.com/settings/keys |
+| GPT | https://platform.openai.com/api-keys |
+| Gemini | https://aistudio.google.com/apikey |
+| MiniMax | https://platform.minimaxi.com/user-center/basic-information/interface-key |
+| 智谱 (GLM) | https://open.bigmodel.cn/usercenter/apikeys |
+
 ## 协议
 
 MIT
