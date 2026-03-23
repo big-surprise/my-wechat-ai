@@ -3,9 +3,13 @@ import type { Provider, ProviderOptions, ProviderConfig } from "../types.js";
 
 const log = createLogger("openai-compat");
 
+type ContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
 interface ChatMessage {
   role: "system" | "user" | "assistant" | "tool";
-  content: string | null;
+  content: string | ContentPart[] | null;
   tool_calls?: ToolCall[];
   tool_call_id?: string;
 }
@@ -69,8 +73,23 @@ export class OpenAICompatibleProvider implements Provider {
     const recentHistory = history.slice(-maxHistory);
     messages.push(...recentHistory);
 
-    // Current user message
-    messages.push({ role: "user", content: prompt });
+    // Current user message (with optional images)
+    const images = options?.media?.filter((m) => m.type === "image" && m.url) || [];
+    if (images.length > 0) {
+      const parts: ContentPart[] = [];
+      if (prompt && prompt !== "[媒体消息]") {
+        parts.push({ type: "text", text: prompt });
+      } else {
+        parts.push({ type: "text", text: "请描述这张图片" });
+      }
+      for (const img of images) {
+        parts.push({ type: "image_url", image_url: { url: img.url! } });
+      }
+      messages.push({ role: "user", content: parts });
+      log.info(`附带 ${images.length} 张图片`);
+    } else {
+      messages.push({ role: "user", content: prompt });
+    }
 
     log.info(`Querying ${this.name} (model: ${model}, session: ${sessionId.slice(0, 8)}...)`);
 
@@ -120,7 +139,7 @@ export class OpenAICompatibleProvider implements Provider {
 
       // If no tool calls, we're done
       if (!assistantMsg.tool_calls || assistantMsg.tool_calls.length === 0 || !callTool) {
-        reply = assistantMsg.content || "(No response)";
+        reply = (typeof assistantMsg.content === "string" ? assistantMsg.content : null) || "(No response)";
         break;
       }
 

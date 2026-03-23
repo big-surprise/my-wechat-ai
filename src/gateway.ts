@@ -13,10 +13,13 @@ import { WeixinChannel } from "./channels/weixin.js";
 import { ClaudeAgentProvider } from "./providers/claude-agent.js";
 import { OpenAICompatibleProvider } from "./providers/openai-compatible.js";
 import { McpManager } from "./mcp.js";
+import { transcribeFromUrl } from "./asr.js";
+import { textToSpeech } from "./tts.js";
 
 const log = createLogger("网关");
 
 const DEBOUNCE_MS = 1500;
+const DEBOUNCE_MEDIA_MS = 4000;
 
 interface MessageBuffer {
   messages: InboundMessage[];
@@ -33,6 +36,8 @@ export class Gateway {
   private processing = new Set<string>();
   // Queue for messages that arrive while AI is processing
   private queues = new Map<string, InboundMessage[]>();
+  // Per-message provider override (from @model syntax)
+  private atProviders = new Map<string, string>();
   // Middleware stack
   private middlewares: Middleware[] = [];
   // Webhook HTTP server
@@ -125,6 +130,28 @@ export class Gateway {
   }
 
   private handleMessage(msg: InboundMessage): void {
+    // Normalize full-width slash/at to half-width (Chinese IME)
+    if (msg.text.startsWith("／")) {
+      msg = { ...msg, text: "/" + msg.text.slice(1) };
+    }
+
+    // Support @command syntax: @画图 xxx, @模型名 xxx
+    const atMatch = msg.text.match(/^@(\S+)\s*(.*)/s);
+    if (atMatch) {
+      const atCmd = atMatch[1]!;
+      const atArg = atMatch[2] || "";
+      // @画图 → /画
+      if (atCmd === "画图" || atCmd === "draw") {
+        msg = { ...msg, text: `/画 ${atArg}`.trim() };
+      }
+      // @模型名 → route to that provider for this message
+      else if (this.providers.has(atCmd.toLowerCase())) {
+        const key = `${msg.channel}:${msg.senderId}`;
+        this.atProviders.set(key, atCmd.toLowerCase());
+        msg = { ...msg, text: atArg || msg.text };
+      }
+    }
+
     // Commands bypass debounce, execute immediately
     if (msg.text.startsWith("/")) {
       this.handleCommand(msg);
@@ -143,15 +170,18 @@ export class Gateway {
     }
 
     // Debounce: accumulate messages within time window
+    // Use longer window for media messages (user likely typing a follow-up)
     const existing = this.buffers.get(key);
+    const hasMedia = msg.media?.length || existing?.messages.some((m) => m.media?.length);
+    const delay = hasMedia ? DEBOUNCE_MEDIA_MS : DEBOUNCE_MS;
     if (existing) {
       clearTimeout(existing.timer);
       existing.messages.push(msg);
-      existing.timer = setTimeout(() => this.flushBuffer(key), DEBOUNCE_MS);
+      existing.timer = setTimeout(() => this.flushBuffer(key), delay);
     } else {
       this.buffers.set(key, {
         messages: [msg],
-        timer: setTimeout(() => this.flushBuffer(key), DEBOUNCE_MS),
+        timer: setTimeout(() => this.flushBuffer(key), delay),
       });
     }
   }
@@ -181,9 +211,20 @@ export class Gateway {
 
     const last = messages[messages.length - 1]!;
     const mergedText = messages.map((m) => m.text).join("\n");
+
+    // Merge media from all messages
+    const allMedia = messages.flatMap((m) => m.media || []);
+
     log.info(`合并 ${messages.length} 条消息`);
 
-    return { ...last, text: mergedText };
+    const isVoice = messages.some((m) => m.isVoice);
+
+    return {
+      ...last,
+      text: mergedText,
+      media: allMedia.length > 0 ? allMedia : undefined,
+      isVoice: isVoice || undefined,
+    };
   }
 
   private async processMessage(msg: InboundMessage): Promise<void> {
@@ -194,13 +235,41 @@ export class Gateway {
       const channel = this.channels.get(msg.channel);
       if (!channel) return;
 
+      // Voice → text: transcribe voice messages before AI processing
+      const voiceMedia = msg.media?.filter((m) => m.type === "voice" && m.url);
+      const isVoiceInput = !!(msg.isVoice || voiceMedia?.length);
+      if (voiceMedia?.length && this.config.asr?.provider !== "disabled") {
+        for (const voice of voiceMedia) {
+          const text = await transcribeFromUrl(voice.url!, this.config.asr || {});
+          if (text) {
+            msg = { ...msg, text: msg.text === "[媒体消息]" ? text : `${msg.text}\n${text}` };
+          }
+        }
+      }
+
       // Resolve skill overrides
       const activeSkillName = this.config.userSkills?.[msg.senderId];
       const activeSkill = activeSkillName ? this.config.skills?.[activeSkillName] : undefined;
 
-      const providerName = activeSkill?.provider
+      // Check for @model override (consumed once)
+      const atProvider = this.atProviders.get(key);
+      if (atProvider) this.atProviders.delete(key);
+
+      let providerName = atProvider
+        || activeSkill?.provider
         || this.config.userRoutes?.[msg.senderId]
         || this.config.defaultProvider;
+
+      // Auto-route: if message has images and current provider doesn't support vision,
+      // fall back to a vision-capable provider
+      const hasImages = msg.media?.some((m) => m.type === "image");
+      if (hasImages && !this.isVisionCapable(providerName)) {
+        const fallback = this.findVisionProvider();
+        if (fallback) {
+          log.info(`图片消息: ${providerName} 不支持多模态, 自动切换到 ${fallback}`);
+          providerName = fallback;
+        }
+      }
 
       const ctx: Context = {
         message: msg,
@@ -226,7 +295,17 @@ export class Gateway {
 
         const options: ProviderOptions = {};
         // Skill system prompt takes priority over global
-        options.systemPrompt = activeSkill?.systemPrompt || this.config.systemPrompt;
+        let systemPrompt = activeSkill?.systemPrompt || this.config.systemPrompt;
+        // Voice mode: ask AI to be concise for TTS
+        if (isVoiceInput && this.config.tts?.provider !== "disabled") {
+          systemPrompt = (systemPrompt || "") + "\n\n[语音模式] 用户通过语音提问，请用简短口语化的方式回答，控制在200字以内。不要使用 markdown 格式、列表或代码块。";
+        }
+        options.systemPrompt = systemPrompt;
+
+        // Pass media attachments if present
+        if (c.message.media?.length) {
+          options.media = c.message.media;
+        }
 
         // Pass MCP tools if available
         const mcpTools = this.mcp.getOpenAITools();
@@ -243,12 +322,20 @@ export class Gateway {
 
       // Send response if available
       if (ctx.response) {
+        let voiceBuffer: Buffer | null = null;
+
+        // Voice input → try TTS for voice reply
+        if (isVoiceInput && this.config.tts?.provider !== "disabled") {
+          voiceBuffer = await textToSpeech(ctx.response, this.config.tts || {});
+        }
+
         await channel.send({
           targetId: msg.senderId,
           text: ctx.response,
+          voice: voiceBuffer ?? undefined,
           replyToken: msg.replyToken,
         });
-        log.info(`已回复 (${ctx.response.length} 字符)`);
+        log.info(`已回复 (${ctx.response.length} 字符${voiceBuffer ? ", 语音" : ""})`);
       }
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -269,6 +356,142 @@ export class Gateway {
     } finally {
       this.processing.delete(key);
     }
+  }
+
+  // OpenAI-compatible providers that support vision (image_url in messages)
+  // DeepSeek: deepseek-chat does NOT support vision
+  private static readonly VISION_PROVIDERS = new Set([
+    "qwen", "gpt", "gemini", "glm", "minimax",
+  ]);
+
+  private isVisionCapable(providerName: string): boolean {
+    // All OpenAI-compatible providers support vision via image_url
+    // Claude agent currently doesn't pass images
+    return Gateway.VISION_PROVIDERS.has(providerName);
+  }
+
+  private findVisionProvider(): string | null {
+    // Find the first available vision-capable provider with an API key configured
+    for (const name of Gateway.VISION_PROVIDERS) {
+      if (this.providers.has(name)) {
+        const config = this.config.providers[name];
+        const hasKey = config?.apiKey || process.env[config?.apiKeyEnv as string || ""];
+        if (hasKey) return name;
+      }
+    }
+    return null;
+  }
+
+  private async generateImage(prompt: string): Promise<{ dataUrl: string; text?: string } | null> {
+    const geminiKey = this.config.providers.gemini?.apiKey
+      || process.env[this.config.providers.gemini?.apiKeyEnv as string || ""]
+      || this.config.tts?.apiKey; // Gemini TTS key as fallback
+
+    if (!geminiKey) {
+      log.error("图片生成: 未配置 Gemini API Key");
+      return null;
+    }
+
+    const model = "gemini-2.5-flash-image";
+    log.info(`生成图片: "${prompt.slice(0, 50)}..." (model: ${model})`);
+
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            responseModalities: ["TEXT", "IMAGE"],
+          },
+        }),
+        signal: AbortSignal.timeout(60_000),
+      },
+    );
+
+    if (!res.ok) {
+      const errBody = await res.text();
+      log.error(`Gemini 图片生成 error ${res.status}: ${errBody.slice(0, 200)}`);
+      return null;
+    }
+
+    const data = await res.json() as any;
+    const parts = data.candidates?.[0]?.content?.parts;
+    if (!parts) return null;
+
+    let text: string | undefined;
+    let dataUrl: string | undefined;
+
+    for (const part of parts) {
+      if (part.inlineData?.data) {
+        const mime = part.inlineData.mimeType || "image/png";
+        dataUrl = `data:${mime};base64,${part.inlineData.data}`;
+        log.info(`图片已生成: ${Buffer.from(part.inlineData.data, "base64").length} bytes`);
+      } else if (part.text) {
+        text = part.text;
+      }
+    }
+
+    return dataUrl ? { dataUrl, text } : null;
+  }
+
+  /** Upload a data URL image to a public image host, returns HTTP URL */
+  private async uploadImage(dataUrl: string): Promise<string | null> {
+    const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/s);
+    if (!match) return null;
+
+    const mimeType = match[1]!;
+    const buffer = Buffer.from(match[2]!, "base64");
+    const ext = mimeType.includes("png") ? "png" : "jpg";
+
+    // Try catbox.moe (free, no auth, accessible from China)
+    try {
+      const form = new FormData();
+      form.append("reqtype", "fileupload");
+      form.append("fileToUpload", new Blob([buffer], { type: mimeType }), `image.${ext}`);
+
+      const res = await fetch("https://catbox.moe/user/api.php", {
+        method: "POST",
+        body: form,
+        signal: AbortSignal.timeout(30_000),
+      });
+
+      if (res.ok) {
+        const url = (await res.text()).trim();
+        if (url.startsWith("http")) {
+          log.info(`图片已上传: ${url}`);
+          return url;
+        }
+      }
+    } catch (err) {
+      log.warn(`catbox 上传失败: ${err instanceof Error ? err.message : err}`);
+    }
+
+    // Fallback: tmpfiles.org
+    try {
+      const form = new FormData();
+      form.append("file", new Blob([buffer], { type: mimeType }), `image.${ext}`);
+
+      const res = await fetch("https://tmpfiles.org/api/v1/upload", {
+        method: "POST",
+        body: form,
+        signal: AbortSignal.timeout(30_000),
+      });
+
+      if (res.ok) {
+        const data = await res.json() as any;
+        const url = data.data?.url?.replace("tmpfiles.org/", "tmpfiles.org/dl/");
+        if (url) {
+          log.info(`图片已上传: ${url}`);
+          return url;
+        }
+      }
+    } catch (err) {
+      log.warn(`tmpfiles 上传失败: ${err instanceof Error ? err.message : err}`);
+    }
+
+    return null;
   }
 
   private async compose(ctx: Context, stack: Middleware[]): Promise<void> {
@@ -442,6 +665,56 @@ export class Gateway {
         break;
       }
 
+      case "/画":
+      case "/draw": {
+        const prompt = msg.text.slice(cmd.length).trim();
+        if (!prompt) {
+          await channel.send({
+            targetId: msg.senderId,
+            text: "用法: /画 <描述>\n例如: /画 一只在月球上的猫",
+            replyToken: msg.replyToken,
+          });
+          break;
+        }
+
+        await channel.send({
+          targetId: msg.senderId,
+          text: "正在生成图片...",
+          replyToken: msg.replyToken,
+        });
+
+        try {
+          const result = await this.generateImage(prompt);
+          if (result) {
+            // Upload to public image host to get HTTP URL
+            const publicUrl = await this.uploadImage(result.dataUrl);
+            const replyText = publicUrl
+              ? (result.text ? `${result.text}\n${publicUrl}` : publicUrl)
+              : (result.text || "图片已生成，但上传失败");
+            await channel.send({
+              targetId: msg.senderId,
+              text: replyText,
+              replyToken: msg.replyToken,
+            });
+          } else {
+            await channel.send({
+              targetId: msg.senderId,
+              text: "图片生成失败，请重试",
+              replyToken: msg.replyToken,
+            });
+          }
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error(`图片生成失败: ${errMsg}`);
+          await channel.send({
+            targetId: msg.senderId,
+            text: `图片生成出错: ${errMsg}`,
+            replyToken: msg.replyToken,
+          });
+        }
+        break;
+      }
+
       case "/help": {
         await channel.send({
           targetId: msg.senderId,
@@ -449,8 +722,13 @@ export class Gateway {
             "wechat-ai 指令:",
             "/model [名称] - 切换AI模型",
             "/skill [名称] - 切换技能 (off 关闭)",
+            "/画 <描述> - AI生成图片",
             "/help - 显示帮助",
             "/ping - 检查状态",
+            "",
+            "@ 快捷方式:",
+            "@画图 <描述> - 生成图片",
+            "@模型名 <问题> - 临时用指定模型回答",
           ].join("\n"),
           replyToken: msg.replyToken,
         });

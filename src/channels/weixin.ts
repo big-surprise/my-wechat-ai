@@ -3,13 +3,14 @@ import { getAccountsDir, ensureDir } from "../config.js";
 import { join } from "node:path";
 import { readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { randomBytes, randomUUID } from "node:crypto";
-import type { Channel, InboundMessage, OutboundMessage, ChannelConfig } from "../types.js";
+import { randomBytes, randomUUID, createDecipheriv } from "node:crypto";
+import type { Channel, InboundMessage, OutboundMessage, ChannelConfig, MediaAttachment } from "../types.js";
 
 const log = createLogger("weixin");
 
 const DEFAULT_BASE_URL = "https://ilinkai.weixin.qq.com";
-const CHANNEL_VERSION = "1.0.0";
+const CDN_BASE_URL = "https://novac2c.cdn.weixin.qq.com/c2c";
+const CHANNEL_VERSION = "1.0.3";
 const API_TIMEOUT_MS = 15_000;
 
 // ── Message constants (from openclaw-weixin protocol) ──
@@ -26,13 +27,35 @@ interface WeixinAccount {
   userId?: string;
 }
 
+interface CDNMedia {
+  encrypt_query_param?: string;
+  aes_key?: string;  // base64-encoded
+}
+
 interface WeixinMessageItem {
   type: number;
   text_item?: { text: string };
-  image_item?: unknown;
-  voice_item?: unknown;
-  file_item?: unknown;
-  video_item?: unknown;
+  image_item?: {
+    media?: CDNMedia;
+    thumb_media?: CDNMedia;
+    /** Raw AES key as hex string (preferred for images) */
+    aeskey?: string;
+    url?: string;
+  };
+  voice_item?: {
+    media?: CDNMedia;
+    /** Voice-to-text from WeChat (if available) */
+    text?: string;
+    encode_type?: number;
+    playtime?: number;
+  };
+  file_item?: {
+    media?: CDNMedia;
+    file_name?: string;
+  };
+  video_item?: {
+    media?: CDNMedia;
+  };
 }
 
 interface WeixinMessage {
@@ -64,6 +87,8 @@ export class WeixinChannel implements Channel {
   private config: ChannelConfig;
   // Cache typing_ticket per user
   private typingTickets = new Map<string, string>();
+  // Last known context_token per user (for startup greeting)
+  private lastTokens = new Map<string, string>();
 
   constructor(config: ChannelConfig) {
     this.config = config;
@@ -163,8 +188,12 @@ export class WeixinChannel implements Channel {
     }
 
     await this.loadSyncBuf();
+    await this.loadLastTokens();
     this.running = true;
     log.info(`消息监听已启动 (${this.account!.accountId.slice(0, 8)}...)`);
+
+    // Send startup greeting to all known users
+    await this.sendStartupGreeting();
 
     while (this.running) {
       try {
@@ -191,15 +220,67 @@ export class WeixinChannel implements Channel {
 
         if (res.msgs && res.msgs.length > 0) {
           for (const msg of res.msgs) {
-            const text = this.extractText(msg);
-            if (!text || !msg.from_user_id) continue;
+            const content = this.extractContent(msg);
+            if (!content || !msg.from_user_id) continue;
 
-            log.info(`收到消息 [${msg.from_user_id.slice(0, 8)}...]: ${text.slice(0, 50)}`);
+            // Download media: resolve encrypt_query_param → base64 data URL
+            const resolvedMedia: MediaAttachment[] = [];
+            for (const m of content.media) {
+              if (m.url && !m.url.startsWith("data:")) {
+                // Find the matching item to get aeskey
+                const encryptParam = m.url;
+                const item = msg.item_list?.find((i) =>
+                  i.image_item?.media?.encrypt_query_param === encryptParam
+                  || i.voice_item?.media?.encrypt_query_param === encryptParam
+                  || i.file_item?.media?.encrypt_query_param === encryptParam
+                  || i.video_item?.media?.encrypt_query_param === encryptParam,
+                );
+
+                // For images: prefer image_item.aeskey (hex), fallback to media.aes_key (base64)
+                let aeskey: string | undefined;
+                if (item?.image_item?.aeskey) {
+                  aeskey = item.image_item.aeskey;  // hex format
+                } else if (item?.image_item?.media?.aes_key) {
+                  aeskey = `base64:${item.image_item.media.aes_key}`;
+                } else if (item?.voice_item?.media?.aes_key) {
+                  aeskey = `base64:${item.voice_item.media.aes_key}`;
+                } else if (item?.file_item?.media?.aes_key) {
+                  aeskey = `base64:${item.file_item.media.aes_key}`;
+                } else if (item?.video_item?.media?.aes_key) {
+                  aeskey = `base64:${item.video_item.media.aes_key}`;
+                }
+
+                log.info(`下载媒体 type=${m.type}, aeskey=${aeskey ? "有" : "无"}`);
+                const dataUrl = await this.downloadMedia("", aeskey, encryptParam);
+                if (dataUrl) {
+                  m.url = dataUrl;
+                  resolvedMedia.push(m);
+                } else {
+                  log.warn(`媒体下载失败，跳过`);
+                }
+              } else {
+                resolvedMedia.push(m);
+              }
+            }
+            content.media = resolvedMedia;
+
+            const mediaInfo = content.media.length > 0
+              ? ` +${content.media.map((m) => m.type).join(",")}`
+              : "";
+            log.info(`收到消息 [${msg.from_user_id.slice(0, 8)}...]: ${content.text.slice(0, 50)}${mediaInfo}`);
+            // Save context_token for startup greeting
+            if (msg.context_token && msg.from_user_id) {
+              this.lastTokens.set(msg.from_user_id, msg.context_token);
+              this.saveLastTokens();
+            }
+
             onMessage({
               id: String(msg.message_id || msg.seq || Date.now()),
               channel: "weixin",
               senderId: msg.from_user_id,
-              text,
+              text: content.text,
+              media: content.media.length > 0 ? content.media : undefined,
+              isVoice: content.isVoice || undefined,
               replyToken: msg.context_token,
               timestamp: msg.create_time_ms || Date.now(),
             });
@@ -256,6 +337,13 @@ export class WeixinChannel implements Channel {
   async send(msg: OutboundMessage): Promise<void> {
     if (!this.account) throw new Error("未登录");
 
+    // Try sending voice if audio buffer is provided
+    if (msg.voice) {
+      const sent = await this.sendVoice(msg.targetId, msg.voice, msg.replyToken);
+      if (sent) return;
+      log.warn("语音发送失败，降级为文本");
+    }
+
     const chunks = this.chunkText(msg.text, 4000);
 
     for (const chunk of chunks) {
@@ -279,10 +367,116 @@ export class WeixinChannel implements Channel {
         { timeout: API_TIMEOUT_MS },
       );
 
-      // sendMessage 成功返回 {} (空对象)，有错误时返回 ret + errmsg
+      log.info(`sendmessage 请求: to=${msg.targetId}, context_token=${(msg.replyToken || "无").slice(0, 20)}...`);
+      log.info(`sendmessage 响应: ${JSON.stringify(res).slice(0, 300)}`);
       if (res.ret && res.ret !== 0) {
-        log.error(`发送失败: ${res.errmsg || JSON.stringify(res)}`);
+        log.error(`发送失败: ret=${res.ret} ${res.errmsg || JSON.stringify(res)}`);
+      } else {
+        log.info(`文本已发送 (${chunk.length} 字符)`);
       }
+    }
+  }
+
+  /** Upload media and send as voice message */
+  private async sendVoice(targetId: string, audio: Buffer, replyToken?: string): Promise<boolean> {
+    if (!this.account) return false;
+
+    try {
+      // Upload media to get a media reference
+      const mediaRef = await this.uploadMedia(audio, "voice", "audio/mpeg");
+      if (!mediaRef) return false;
+
+      const body = {
+        msg: {
+          from_user_id: "",
+          to_user_id: targetId,
+          client_id: generateClientId(),
+          message_type: MessageType.BOT,
+          message_state: MessageState.FINISH,
+          context_token: replyToken || undefined,
+          item_list: [{
+            type: MessageItemType.VOICE,
+            voice_item: {
+              media: mediaRef,
+              playtime: estimatePlaytime(audio.length),
+            },
+          }],
+        },
+        base_info: { channel_version: CHANNEL_VERSION },
+      };
+
+      const res = await this.api(
+        this.account.baseUrl,
+        "ilink/bot/sendmessage",
+        body,
+        { timeout: API_TIMEOUT_MS },
+      );
+
+      if (res.ret && res.ret !== 0) {
+        log.error(`语音发送失败: ${res.errmsg || JSON.stringify(res)}`);
+        return false;
+      }
+
+      log.info("语音消息已发送");
+      return true;
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      log.error(`语音发送异常: ${errMsg}`);
+      return false;
+    }
+  }
+
+  /** Upload media to WeChat, returns media reference for use in sendmessage */
+  private async uploadMedia(
+    data: Buffer,
+    type: "voice" | "image" | "video" | "file",
+    mimeType: string,
+  ): Promise<CDNMedia | null> {
+    if (!this.account) return null;
+
+    try {
+      const formData = new FormData();
+      const blob = new Blob([data], { type: mimeType });
+      const ext = mimeType.includes("mpeg") ? "mp3" : mimeType.split("/")[1] || "bin";
+      formData.append("media", blob, `upload.${ext}`);
+      formData.append("type", type);
+
+      const url = `${this.account.baseUrl.replace(/\/$/, "")}/ilink/bot/uploadmedia`;
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "AuthorizationType": "ilink_bot_token",
+          "Authorization": `Bearer ${this.account.token}`,
+          "X-WECHAT-UIN": randomUin(),
+        },
+        body: formData,
+        signal: AbortSignal.timeout(30_000),
+      });
+
+      const result = await res.json() as any;
+
+      if (result.ret && result.ret !== 0) {
+        log.error(`媒体上传失败: ${result.errmsg || JSON.stringify(result)}`);
+        return null;
+      }
+
+      // Extract media reference from response
+      const media: CDNMedia = {
+        encrypt_query_param: result.encrypt_query_param || result.media?.encrypt_query_param || result.media_id,
+      };
+
+      if (!media.encrypt_query_param) {
+        log.warn(`媒体上传: 未返回有效引用, 响应: ${JSON.stringify(result).slice(0, 200)}`);
+        return null;
+      }
+
+      log.info(`媒体上传成功: ${media.encrypt_query_param.slice(0, 20)}...`);
+      return media;
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      log.error(`媒体上传异常: ${errMsg}`);
+      return null;
     }
   }
 
@@ -303,14 +497,119 @@ export class WeixinChannel implements Channel {
     }, { timeout: 50_000 });
   }
 
-  private extractText(msg: WeixinMessage): string | null {
+  /** Download media from WeChat CDN, decrypt, and return as base64 data URL */
+  async downloadMedia(_mediaId: string, aeskey?: string, encryptParam?: string): Promise<string | null> {
+    if (!encryptParam) {
+      log.warn("媒体缺少 encrypt_query_param，无法下载");
+      return null;
+    }
+
+    try {
+      // Build CDN download URL
+      const cdnUrl = `${CDN_BASE_URL}/download?encrypted_query_param=${encodeURIComponent(encryptParam)}`;
+      log.info(`下载媒体: ${cdnUrl.slice(0, 80)}...`);
+
+      const res = await fetch(cdnUrl, { signal: AbortSignal.timeout(30_000) });
+      if (!res.ok) {
+        log.error(`CDN 下载失败: ${res.status} ${res.statusText}`);
+        return null;
+      }
+
+      let buffer = Buffer.from(await res.arrayBuffer());
+      log.info(`CDN 下载完成: ${buffer.length} bytes`);
+
+      // Decrypt with AES-128-ECB if aeskey is provided
+      if (aeskey) {
+        try {
+          let key: Buffer;
+          if (aeskey.startsWith("base64:")) {
+            // base64-encoded key (from media.aes_key)
+            const decoded = Buffer.from(aeskey.slice(7), "base64");
+            // Could be raw 16 bytes or hex string of 32 chars
+            if (decoded.length === 16) {
+              key = decoded;
+            } else if (decoded.length === 32 && /^[0-9a-fA-F]{32}$/.test(decoded.toString("ascii"))) {
+              key = Buffer.from(decoded.toString("ascii"), "hex");
+            } else {
+              throw new Error(`unexpected aes_key length: ${decoded.length}`);
+            }
+          } else {
+            // hex-encoded key (from image_item.aeskey)
+            key = Buffer.from(aeskey, "hex");
+          }
+          const decipher = createDecipheriv("aes-128-ecb", key, null);
+          buffer = Buffer.concat([decipher.update(buffer), decipher.final()]);
+          log.info(`AES 解密完成: ${buffer.length} bytes`);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.warn(`AES 解密失败 (尝试使用原始数据): ${errMsg}`);
+        }
+      }
+
+      // Detect content type from magic bytes
+      const contentType = detectImageType(buffer);
+      const base64 = buffer.toString("base64");
+      return `data:${contentType};base64,${base64}`;
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      log.error(`媒体下载失败: ${errMsg}`);
+      return null;
+    }
+  }
+
+  private extractContent(msg: WeixinMessage): { text: string; media: MediaAttachment[]; isVoice: boolean } | null {
     if (!msg.item_list?.length) return null;
+
+    const texts: string[] = [];
+    const media: MediaAttachment[] = [];
+    let isVoice = false;
+
     for (const item of msg.item_list) {
-      if (item.type === 1 && item.text_item?.text) {
-        return item.text_item.text;
+      switch (item.type) {
+        case MessageItemType.TEXT:
+          if (item.text_item?.text) texts.push(item.text_item.text);
+          break;
+        case MessageItemType.IMAGE: {
+          const img = item.image_item;
+          if (img?.media?.encrypt_query_param) {
+            // Use encrypt_query_param as the "url" key — downloadMedia resolves it
+            media.push({ type: "image", url: img.media.encrypt_query_param });
+          }
+          break;
+        }
+        case MessageItemType.VOICE: {
+          isVoice = true;
+          const voice = item.voice_item;
+          // WeChat may provide voice-to-text directly
+          if (voice?.text) {
+            texts.push(voice.text);
+            log.info(`语音自带转文字: "${voice.text.slice(0, 50)}"`);
+          } else if (voice?.media?.encrypt_query_param) {
+            media.push({ type: "voice", url: voice.media.encrypt_query_param });
+          }
+          break;
+        }
+        case MessageItemType.FILE: {
+          const file = item.file_item;
+          if (file?.media?.encrypt_query_param) {
+            media.push({ type: "file", url: file.media.encrypt_query_param, fileName: file.file_name });
+          }
+          break;
+        }
+        case MessageItemType.VIDEO: {
+          const video = item.video_item;
+          if (video?.media?.encrypt_query_param) {
+            media.push({ type: "video", url: video.media.encrypt_query_param });
+          }
+          break;
+        }
       }
     }
-    return null;
+
+    if (texts.length === 0 && media.length === 0) return null;
+    const text = texts.join("\n") || (media.length > 0 ? "[媒体消息]" : "");
+
+    return { text, media: media.length > 0 ? media : [], isVoice };
   }
 
   private chunkText(text: string, maxLen: number): string[] {
@@ -359,7 +658,16 @@ export class WeixinChannel implements Channel {
         body: bodyStr,
         signal: controller.signal,
       });
-      return await res.json();
+      if (!res.ok) {
+        log.warn(`HTTP ${res.status} ${res.statusText} ← ${path}`);
+      }
+      const text = await res.text();
+      try {
+        return JSON.parse(text);
+      } catch {
+        log.warn(`非 JSON 响应 ← ${path}: ${text.slice(0, 200)}`);
+        return { ret: -999, errmsg: `HTTP ${res.status}: ${text.slice(0, 100)}` };
+      }
     } finally {
       clearTimeout(timer);
     }
@@ -408,6 +716,55 @@ export class WeixinChannel implements Channel {
       // fresh start
     }
   }
+
+  // ── Startup greeting ──
+
+  private async sendStartupGreeting(): Promise<void> {
+    if (this.lastTokens.size === 0) return;
+
+    const greeting = "Hey! I'm back online and ready to chat. Send me a message anytime! 👋";
+    log.info(`发送启动问候给 ${this.lastTokens.size} 个用户...`);
+
+    for (const [userId, token] of this.lastTokens) {
+      try {
+        await this.send({ targetId: userId, text: greeting, replyToken: token });
+        log.info(`已问候 ${userId.slice(0, 8)}...`);
+      } catch {
+        log.warn(`问候失败 ${userId.slice(0, 8)}... (token 可能过期)`);
+      }
+    }
+  }
+
+  // ── Last token persistence ──
+
+  private lastTokensFile(): string {
+    return join(getAccountsDir(), "weixin-tokens.json");
+  }
+
+  private async saveLastTokens(): Promise<void> {
+    try {
+      await ensureDir(getAccountsDir());
+      const data = Object.fromEntries(this.lastTokens);
+      await writeFile(this.lastTokensFile(), JSON.stringify(data));
+    } catch {
+      // non-critical
+    }
+  }
+
+  private async loadLastTokens(): Promise<void> {
+    const path = this.lastTokensFile();
+    if (!existsSync(path)) return;
+    try {
+      const raw = await readFile(path, "utf-8");
+      const data = JSON.parse(raw);
+      for (const [k, v] of Object.entries(data)) {
+        if (typeof v === "string") this.lastTokens.set(k, v);
+      }
+      log.info(`已加载 ${this.lastTokens.size} 个用户 token`);
+    } catch {
+      // fresh start
+    }
+  }
 }
 
 // ── Helpers ──
@@ -423,4 +780,17 @@ function generateClientId(): string {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+/** Estimate voice playtime in ms from mp3 buffer size (rough: ~16kbps) */
+function estimatePlaytime(byteSize: number): number {
+  return Math.round((byteSize * 8) / 16000 * 1000);
+}
+
+function detectImageType(buf: Buffer): string {
+  if (buf[0] === 0xff && buf[1] === 0xd8) return "image/jpeg";
+  if (buf[0] === 0x89 && buf[1] === 0x50) return "image/png";
+  if (buf[0] === 0x47 && buf[1] === 0x49) return "image/gif";
+  if (buf[0] === 0x52 && buf[1] === 0x49) return "image/webp";
+  return "image/jpeg"; // default
 }

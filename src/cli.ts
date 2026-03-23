@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync, unlinkSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { loadConfig, saveConfig } from "./config.js";
+import { loadConfig, saveConfig, getDataDir } from "./config.js";
 import { Gateway } from "./gateway.js";
 import { setLogLevel, createLogger } from "./logger.js";
 
@@ -18,6 +18,9 @@ const HELP = `
 
   \x1b[1m命令:\x1b[0m
     wechat-ai                        启动 (首次自动扫码登录)
+    wechat-ai start                  后台运行 (daemon 模式)
+    wechat-ai stop                   停止后台进程
+    wechat-ai logs                   查看后台日志
     wechat-ai set <provider> <key>   设置模型 API Key
     wechat-ai use <provider>         设置默认模型
     wechat-ai config                 查看当前配置
@@ -181,6 +184,81 @@ async function main() {
       } catch {
         console.error("\x1b[31m✗\x1b[0m 更新失败，请手动执行: npm i -g wechat-ai@latest");
         process.exit(1);
+      }
+      break;
+    }
+
+    case "start": {
+      const pidFile = join(getDataDir(), "daemon.pid");
+      const logFile = join(getDataDir(), "daemon.log");
+
+      if (existsSync(pidFile)) {
+        const oldPid = parseInt(readFileSync(pidFile, "utf-8").trim(), 10);
+        try {
+          process.kill(oldPid, 0);
+          console.log(`\x1b[33m⚠\x1b[0m 已有进程在运行 (PID: ${oldPid})`);
+          console.log(`  停止: wechat-ai stop`);
+          console.log(`  日志: wechat-ai logs`);
+          process.exit(1);
+        } catch {
+          unlinkSync(pidFile);
+        }
+      }
+
+      const { spawn } = await import("node:child_process");
+      const { openSync } = await import("node:fs");
+
+      const out = openSync(logFile, "a");
+      const child = spawn(process.execPath, [join(__dirname, "cli.js")], {
+        detached: true,
+        stdio: ["ignore", out, out],
+        env: { ...process.env, WAI_DAEMON: "1" },
+      });
+
+      const { writeFileSync } = await import("node:fs");
+      writeFileSync(pidFile, String(child.pid));
+      child.unref();
+
+      console.log(`\x1b[32m✓\x1b[0m 已在后台启动 (PID: ${child.pid})`);
+      console.log(`  日志: wechat-ai logs`);
+      console.log(`  停止: wechat-ai stop`);
+      break;
+    }
+
+    case "stop": {
+      const pidPath = join(getDataDir(), "daemon.pid");
+      if (!existsSync(pidPath)) {
+        console.log("没有运行中的后台进程");
+        process.exit(1);
+      }
+
+      const pid = parseInt(readFileSync(pidPath, "utf-8").trim(), 10);
+      try {
+        process.kill(pid, "SIGTERM");
+        unlinkSync(pidPath);
+        console.log(`\x1b[32m✓\x1b[0m 已停止后台进程 (PID: ${pid})`);
+      } catch {
+        unlinkSync(pidPath);
+        console.log("进程已不存在，已清理 PID 文件");
+      }
+      break;
+    }
+
+    case "logs": {
+      const logPath = join(getDataDir(), "daemon.log");
+      if (!existsSync(logPath)) {
+        console.log("没有日志文件");
+        process.exit(1);
+      }
+
+      const follow = args.includes("-f") || args.includes("--follow");
+      const { execSync, spawn: spawnLog } = await import("node:child_process");
+
+      if (follow) {
+        const tail = spawnLog("tail", ["-f", logPath], { stdio: "inherit" });
+        tail.on("close", () => process.exit(0));
+      } else {
+        execSync(`tail -100 "${logPath}"`, { stdio: "inherit" });
       }
       break;
     }

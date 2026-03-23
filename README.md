@@ -14,31 +14,19 @@ wechat-ai
 
 ## 支持模型
 
-| 模型 | 默认版本 | 设置 Key |
-|------|---------|---------|
-| 通义千问 (Qwen) | qwen-plus | `wechat-ai set qwen <key>` |
-| DeepSeek | deepseek-chat | `wechat-ai set deepseek <key>` |
-| Claude | claude-opus-4-6 (Agent) | `wechat-ai set claude <key>` |
-| GPT | gpt-4o | `wechat-ai set gpt <key>` |
-| Gemini | gemini-2.0-flash | `wechat-ai set gemini <key>` |
-| MiniMax | MiniMax-Text-01 | `wechat-ai set minimax <key>` |
-| 智谱 (GLM) | glm-4-plus | `wechat-ai set glm <key>` |
+| 模型 | 默认版本 | 设置 Key | 获取 Key |
+|------|---------|---------|---------|
+| 通义千问 (Qwen) | qwen-plus | `wechat-ai set qwen <key>` | [申请](https://dashscope.console.aliyun.com/apiKey) |
+| DeepSeek | deepseek-chat | `wechat-ai set deepseek <key>` | [申请](https://platform.deepseek.com/api_keys) |
+| Claude | claude-opus-4-6 (Agent) | `wechat-ai set claude <key>` | [申请](https://console.anthropic.com/settings/keys) |
+| GPT | gpt-4o | `wechat-ai set gpt <key>` | [申请](https://platform.openai.com/api-keys) |
+| Gemini | gemini-2.0-flash | `wechat-ai set gemini <key>` | [申请](https://aistudio.google.com/apikey) |
+| MiniMax | MiniMax-Text-01 | `wechat-ai set minimax <key>` | [申请](https://platform.minimaxi.com/user-center/basic-information/interface-key) |
+| 智谱 (GLM) | glm-4-plus | `wechat-ai set glm <key>` | [申请](https://open.bigmodel.cn/usercenter/apikeys) |
 
 支持任何 OpenAI 兼容 API，编辑 `~/.wai/config.json` 即可添加。
 
 Claude 通过 [Agent SDK](https://github.com/anthropics/claude-agent-sdk-typescript) 接入，支持执行代码、读写文件、搜索网页，不只是聊天。
-
-### API Key 获取
-
-| 模型 | 申请地址 |
-|------|---------|
-| 通义千问 (Qwen) | https://dashscope.console.aliyun.com/apiKey |
-| DeepSeek | https://platform.deepseek.com/api_keys |
-| Claude | https://console.anthropic.com/settings/keys |
-| GPT | https://platform.openai.com/api-keys |
-| Gemini | https://aistudio.google.com/apikey |
-| MiniMax | https://platform.minimaxi.com/user-center/basic-information/interface-key |
-| 智谱 (GLM) | https://open.bigmodel.cn/usercenter/apikeys |
 
 ## 安装运行
 

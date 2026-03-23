@@ -15,6 +15,8 @@ export interface InboundMessage {
   media?: MediaAttachment[];
   /** Opaque channel-specific metadata needed for replies */
   replyToken?: string;
+  /** Whether the original input was voice (for TTS reply) */
+  isVoice?: boolean;
   /** Timestamp (ms) */
   timestamp: number;
 }
@@ -26,6 +28,8 @@ export interface OutboundMessage {
   text: string;
   /** Optional media */
   media?: MediaAttachment[];
+  /** Voice audio buffer (mp3) — if set, channel should send as voice message */
+  voice?: Buffer;
   /** Opaque reply token from inbound */
   replyToken?: string;
 }
@@ -78,6 +82,8 @@ export interface ProviderOptions {
   allowedTools?: string[];
   /** Working directory for agent-type providers */
   cwd?: string;
+  /** Media attachments (images, voice, etc.) */
+  media?: MediaAttachment[];
   /** MCP tools in OpenAI function calling format */
   mcpTools?: Array<{
     type: "function";
@@ -188,6 +194,24 @@ export interface WaiConfig {
 
   /** MCP server configurations */
   mcpServers?: Record<string, McpServerConfig>;
+
+  /** ASR (speech-to-text) config for voice messages */
+  asr?: {
+    provider?: "whisper" | "disabled";
+    apiKey?: string;
+    baseUrl?: string;
+    model?: string;
+  };
+
+  /** TTS (text-to-speech) config for voice replies */
+  tts?: {
+    provider?: "openai" | "gemini" | "disabled";
+    apiKey?: string;
+    baseUrl?: string;
+    model?: string;
+    voice?: string;
+    maxChars?: number;
+  };
 }
 
 export interface ProviderConfig {
