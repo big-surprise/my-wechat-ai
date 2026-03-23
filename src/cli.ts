@@ -1,8 +1,15 @@
 #!/usr/bin/env node
 
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { loadConfig, saveConfig } from "./config.js";
 import { Gateway } from "./gateway.js";
 import { setLogLevel, createLogger } from "./logger.js";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8"));
+const VERSION = pkg.version as string;
 
 const log = createLogger("cli");
 
@@ -39,6 +46,11 @@ async function main() {
 
   const logLevel = (process.env.WAI_LOG_LEVEL || "info") as "debug" | "info" | "warn" | "error";
   setLogLevel(logLevel);
+
+  if (command === "--version" || command === "-v") {
+    console.log(`wechat-ai v${VERSION}`);
+    process.exit(0);
+  }
 
   if (command === "help" || command === "--help" || command === "-h") {
     console.log(HELP);
@@ -128,7 +140,7 @@ async function main() {
       process.on("SIGINT", shutdown);
       process.on("SIGTERM", shutdown);
 
-      log.info("启动 wechat-ai...");
+      log.info(`wechat-ai v${VERSION}`);
       await gateway.start();
       break;
     }
