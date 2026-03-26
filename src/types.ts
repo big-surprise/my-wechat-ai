@@ -177,6 +177,9 @@ export interface WaiConfig {
   /** Per-user provider overrides: senderId -> providerName */
   userRoutes?: Record<string, string>;
 
+  /** Per-user model overrides (for OpenRouter etc.): senderId -> model name */
+  userModelOverrides?: Record<string, string>;
+
   /** Per-user active skill: senderId -> skillName */
   userSkills?: Record<string, string>;
 

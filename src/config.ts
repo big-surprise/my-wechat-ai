@@ -50,6 +50,12 @@ const DEFAULT_CONFIG: WaiConfig = {
       model: "glm-4-plus",
       apiKeyEnv: "GLM_API_KEY",
     },
+    openrouter: {
+      type: "openai-compatible",
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: "google/gemini-2.5-flash",
+      apiKeyEnv: "OPENROUTER_API_KEY",
+    },
   },
   channels: {
     weixin: {

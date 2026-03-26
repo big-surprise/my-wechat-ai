@@ -70,19 +70,40 @@ wechat-ai update                 # 更新到最新版
 | Gemini | gemini-2.0-flash | `wechat-ai set gemini <key>` | [申请](https://aistudio.google.com/apikey) |
 | MiniMax | MiniMax-Text-01 | `wechat-ai set minimax <key>` | [申请](https://platform.minimaxi.com/user-center/basic-information/interface-key) |
 | 智谱 (GLM) | glm-4-plus | `wechat-ai set glm <key>` | [申请](https://open.bigmodel.cn/usercenter/apikeys) |
+| OpenRouter | 300+ 第三方模型 | `wechat-ai set openrouter <key>` | [申请](https://openrouter.ai/settings/keys) |
 
 支持任何 OpenAI 兼容 API，编辑 `~/.wai/config.json` 即可添加。
 
 Claude 通过 [Agent SDK](https://github.com/anthropics/claude-agent-sdk-typescript) 接入，支持执行代码、读写文件、搜索网页，不只是聊天。
 
+### 第三方模型 (OpenRouter)
+
+配置一个 [OpenRouter](https://openrouter.ai) Key 即可使用 300+ 模型，无需逐个申请：
+
+```bash
+wechat-ai set openrouter sk-or-xxx
+```
+
+在微信中通过 `/model vendor/model` 切换：
+
+```
+/model google/gemini-2.5-pro         Google Gemini
+/model anthropic/claude-sonnet-4     Anthropic Claude
+/model meta-llama/llama-4-maverick   Meta Llama
+```
+
+更多模型见 [OpenRouter Models](https://openrouter.ai/models)。
+
 ### 微信内指令
 
 ```
-/model              查看当前模型
-/model deepseek     切换到 DeepSeek
-/model qwen         切换到 Qwen
-/help               显示指令列表
-/ping               检查状态
+/model                               查看当前模型
+/model qwen                          切换内置模型
+/model google/gemini-2.5-pro         切换第三方模型
+/cc /qwen /deepseek /gpt             快捷切换
+@指南                                 查看快捷指南
+/help                                显示全部指令
+/ping                                检查状态
 ```
 
 ## 架构
@@ -90,11 +111,12 @@ Claude 通过 [Agent SDK](https://github.com/anthropics/claude-agent-sdk-typescr
 ```
 微信 ──ilink──> wechat-ai 网关 ──路由──> AI 模型
                     │                   │
-               会话管理            ┌────┴────┐
-               模型路由            │         │
-                             Claude Agent  OpenAI 兼容
-                             (工具: Bash,  (Qwen, DeepSeek,
-                              Read, Web)   GPT, Gemini...)
+               会话管理            ┌────┴─────────┐
+               模型路由            │              │
+                             Claude Agent   OpenAI 兼容
+                             (工具: Bash,   (Qwen, DeepSeek,
+                              Read, Web)    GPT, Gemini,
+                                            OpenRouter 300+)
 ```
 
 ## 项目结构
@@ -116,7 +138,7 @@ src/
 - [x] 微信 ilink 协议
 - [x] 多模型切换 (`/model`)
 - [x] 输入状态提示
-- [x] 7 个内置模型
+- [x] 8 个内置模型 + OpenRouter 300+
 - [x] npm 发布
 - [x] 中间件系统
 - [x] MCP 客户端支持

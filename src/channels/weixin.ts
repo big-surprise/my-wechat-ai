@@ -89,6 +89,10 @@ export class WeixinChannel implements Channel {
   private typingTickets = new Map<string, string>();
   // Last known context_token per user (for startup greeting)
   private lastTokens = new Map<string, string>();
+  // In-memory cache to avoid repeated guide-sent file reads
+  private guideSentCache = new Set<string>();
+  // Whether startup greeting was already sent proactively
+  private startupGreetingSent = false;
 
   constructor(config: ChannelConfig) {
     this.config = config;
@@ -203,7 +207,8 @@ export class WeixinChannel implements Channel {
     this.running = true;
     log.info(`已上线 (${this.account!.accountId.slice(0, 8)}...)`);
 
-    // Send startup greeting to all known users
+    // Send startup greeting to known users (with saved tokens)
+    // Fresh scan: no tokens, greeting + guide will be sent on first message
     await this.sendStartupGreeting();
 
     while (this.running) {
@@ -283,6 +288,11 @@ export class WeixinChannel implements Channel {
             if (msg.context_token && msg.from_user_id) {
               this.lastTokens.set(msg.from_user_id, msg.context_token);
               this.saveLastTokens();
+            }
+
+            // Send greeting + guide on first message after startup
+            if (msg.context_token) {
+              await this.maybeSendGreetingAndGuide(msg.from_user_id, msg.context_token);
             }
 
             onMessage({
@@ -381,7 +391,7 @@ export class WeixinChannel implements Channel {
       if (res.ret && res.ret !== 0) {
         log.error(`发送失败: ret=${res.ret} ${res.errmsg || JSON.stringify(res)}`);
       } else {
-        log.debug(`文本已发送 (${chunk.length} 字符)`);
+        log.info(`文本已发送 (${chunk.length} 字符) → ${msg.targetId.slice(0, 8)}...`);
       }
     }
   }
@@ -715,10 +725,13 @@ export class WeixinChannel implements Channel {
         await unlink(file);
       }
     }
+    // Clear tokens (old session tokens won't work after re-scan)
+    // Clear guide-sent so all users receive the guide again
     for (const f of ["weixin-tokens.json", "weixin-guide-sent.json"]) {
       const p = join(getAccountsDir(), f);
       if (existsSync(p)) await unlink(p);
     }
+    this.guideSentCache.clear();
   }
 
   private promptReuse(): Promise<boolean> {
@@ -732,13 +745,14 @@ export class WeixinChannel implements Channel {
         // Move cursor up to redraw (except first render)
         process.stdout.write(`\x1b[${options.length}A`);
         for (let i = 0; i < options.length; i++) {
+          const num = `\x1b[2m${i + 1}.\x1b[0m`;
           const prefix = i === selected ? "\x1b[36m❯\x1b[0m" : " ";
           const text = i === selected ? `\x1b[1m${options[i]}\x1b[0m` : `\x1b[2m${options[i]}\x1b[0m`;
-          process.stdout.write(`\x1b[2K  ${prefix} ${text}\n`);
+          process.stdout.write(`\x1b[2K  ${prefix} ${num} ${text}\n`);
         }
       };
 
-      console.log(`\x1b[32m?\x1b[0m 检测到已登录账号 (${display})，请选择: \x1b[2m(↑↓ 选择, 回车确认)\x1b[0m`);
+      console.log(`\x1b[32m?\x1b[0m 检测到已登录账号 (${display})，请选择: \x1b[2m(输入数字 或 ↑↓选择)\x1b[0m`);
       // Print initial placeholders
       for (let i = 0; i < options.length; i++) {
         console.log();
@@ -764,6 +778,16 @@ export class WeixinChannel implements Channel {
           // Down
           selected = (selected + 1) % options.length;
           render();
+        } else if (key === "1") {
+          selected = 0;
+          render();
+          cleanup();
+          resolve(true);
+        } else if (key === "2") {
+          selected = 1;
+          render();
+          cleanup();
+          resolve(false);
         } else if (key === "\r" || key === "\n") {
           // Enter
           cleanup();
@@ -824,28 +848,75 @@ export class WeixinChannel implements Channel {
     await writeFile(this.guideSentFile(), JSON.stringify([...sent]));
   }
 
-  private async sendStartupGreeting(): Promise<void> {
-    if (this.lastTokens.size === 0) return;
-
-    const greeting = "Hey! I'm back online and ready to chat. Send me a message anytime! 👋";
-    const guide = [
+  private getGuideText(): string {
+    return [
       "📌 快捷指南:",
       "直接发消息即可对话",
-      "/cc 切Claude（/qwen /deepseek /gpt 可切模型）",
-      "@模型名 问题 → 临时用指定模型",
+      "",
+      "切换模型:",
+      "/cc → Claude  /qwen /deepseek /gpt",
+      "",
+      "第三方模型 (需先配置 OpenRouter Key):",
+      "/model google/gemini-2.5-pro",
+      "/model anthropic/claude-sonnet-4",
+      "",
       "/help 查看全部指令",
+      "@指南 重新查看本指南",
     ].join("\n");
+  }
 
+  /** Send greeting + guide to user on their first message (if not sent before) */
+  private async maybeSendGreetingAndGuide(userId: string, token: string): Promise<void> {
+    // In-memory fast check
+    if (this.startupGreetingSent && this.guideSentCache.has(userId)) return;
+
+    try {
+      // Send greeting if startup greeting wasn't sent proactively
+      if (!this.startupGreetingSent) {
+        await this.send({
+          targetId: userId,
+          text: "Hey! I'm back online and ready to chat. Send me a message anytime! 👋",
+          replyToken: token,
+        });
+        this.startupGreetingSent = true;
+        await new Promise((r) => setTimeout(r, 500));
+      }
+
+      // Send guide if not sent before
+      if (!this.guideSentCache.has(userId)) {
+        const guideSent = await this.loadGuideSent();
+        if (!guideSent.has(userId)) {
+          await this.send({ targetId: userId, text: this.getGuideText(), replyToken: token });
+          guideSent.add(userId);
+          await this.saveGuideSent(guideSent);
+          log.debug(`已发送指南给 ${userId.slice(0, 8)}...`);
+        }
+        this.guideSentCache.add(userId);
+      }
+    } catch {
+      log.warn(`发送问候/指南失败 ${userId.slice(0, 8)}...`);
+    }
+  }
+
+  private async sendStartupGreeting(): Promise<void> {
+    if (this.lastTokens.size === 0) {
+      log.debug("无已保存的用户 token，跳过启动问候 (用户发消息时会补发指南)");
+      return;
+    }
+
+    const greeting = "Hey! I'm back online and ready to chat. Send me a message anytime! 👋";
     const guideSent = await this.loadGuideSent();
     log.debug(`发送启动问候给 ${this.lastTokens.size} 个用户...`);
 
     for (const [userId, token] of this.lastTokens) {
       try {
         await this.send({ targetId: userId, text: greeting, replyToken: token });
+        // Also send guide if not sent before
         if (!guideSent.has(userId)) {
           await new Promise((r) => setTimeout(r, 500));
-          await this.send({ targetId: userId, text: guide, replyToken: token });
+          await this.send({ targetId: userId, text: this.getGuideText(), replyToken: token });
           guideSent.add(userId);
+          this.guideSentCache.add(userId);
         }
         log.debug(`已问候 ${userId.slice(0, 8)}...`);
       } catch {
@@ -854,6 +925,7 @@ export class WeixinChannel implements Channel {
     }
 
     await this.saveGuideSent(guideSent);
+    this.startupGreetingSent = true;
   }
 
   // ── Last token persistence ──

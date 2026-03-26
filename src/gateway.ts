@@ -40,6 +40,17 @@ export class Gateway {
   private atProviders = new Map<string, string>();
   // Middleware stack
   private middlewares: Middleware[] = [];
+  // Provider descriptions for switch messages
+  private static PROVIDER_TIPS: Record<string, string> = {
+    claude: "Claude Agent · 支持搜索/代码/文件",
+    qwen: "通义千问",
+    deepseek: "DeepSeek · 擅长推理和代码",
+    gpt: "GPT-4o",
+    gemini: "Gemini",
+    minimax: "MiniMax",
+    glm: "智谱 GLM",
+    openrouter: "OpenRouter · 300+ 第三方模型",
+  };
   // Webhook HTTP server
   private webhookServer: Server | null = null;
   // MCP client manager
@@ -143,6 +154,10 @@ export class Gateway {
       // @画图 → /画
       if (atCmd === "画图" || atCmd === "draw") {
         msg = { ...msg, text: `/画 ${atArg}`.trim() };
+      }
+      // @指南 → send guide directly (no AI)
+      else if (atCmd === "指南" || atCmd === "guide") {
+        msg = { ...msg, text: "/guide" };
       }
       // @模型名 → route to that provider for this message
       else if (this.providers.has(atCmd.toLowerCase())) {
@@ -305,6 +320,13 @@ export class Gateway {
         }
 
         const options: ProviderOptions = {};
+
+        // Pass per-user model override (e.g. OpenRouter vendor/model)
+        const modelOverride = this.config.userModelOverrides?.[msg.senderId];
+        if (modelOverride) {
+          options.model = modelOverride;
+        }
+
         // Skill system prompt takes priority over global
         let systemPrompt = activeSkill?.systemPrompt || this.config.systemPrompt;
         // Voice mode: ask AI to be concise for TTS
@@ -609,9 +631,11 @@ export class Gateway {
     if (aliasTarget && this.providers.has(aliasTarget)) {
       if (!this.config.userRoutes) this.config.userRoutes = {};
       this.config.userRoutes[msg.senderId] = aliasTarget;
+      if (this.config.userModelOverrides) delete this.config.userModelOverrides[msg.senderId];
+      const tip = Gateway.PROVIDER_TIPS[aliasTarget] || aliasTarget;
       await channel.send({
         targetId: msg.senderId,
-        text: `已切换到: ${aliasTarget}`,
+        text: `✓ ${tip}`,
         replyToken: msg.replyToken,
       });
       return;
@@ -620,26 +644,54 @@ export class Gateway {
     switch (cmd) {
       case "/model": {
         if (!arg) {
-          const current = this.config.userRoutes?.[msg.senderId] || this.config.defaultProvider;
+          const currentProvider = this.config.userRoutes?.[msg.senderId] || this.config.defaultProvider;
+          const modelOverride = this.config.userModelOverrides?.[msg.senderId];
+          const currentDisplay = modelOverride
+            ? `${currentProvider} (${modelOverride})`
+            : currentProvider;
           const available = [...this.providers.keys()].join(", ");
           await channel.send({
             targetId: msg.senderId,
-            text: `当前模型: ${current}\n可用模型: ${available}\n用法: /model <名称>`,
+            text: `当前模型: ${currentDisplay}\n可用模型: ${available}\n\n用法:\n/model <名称> - 切换内置模型\n/model <vendor/model> - 第三方模型 (via OpenRouter)`,
             replyToken: msg.replyToken,
           });
+        } else if (arg.includes("/")) {
+          // vendor/model format → route through openrouter
+          if (!this.providers.has("openrouter")) {
+            await channel.send({
+              targetId: msg.senderId,
+              text: "需要先配置 OpenRouter API Key:\nwechat-ai set openrouter <key>\n\n获取 Key: openrouter.ai",
+              replyToken: msg.replyToken,
+            });
+          } else {
+            if (!this.config.userRoutes) this.config.userRoutes = {};
+            if (!this.config.userModelOverrides) this.config.userModelOverrides = {};
+            this.config.userRoutes[msg.senderId] = "openrouter";
+            this.config.userModelOverrides[msg.senderId] = arg;
+            await channel.send({
+              targetId: msg.senderId,
+              text: `✓ ${arg}\nvia OpenRouter`,
+              replyToken: msg.replyToken,
+            });
+          }
         } else if (this.providers.has(arg.toLowerCase())) {
           const provider = arg.toLowerCase();
           if (!this.config.userRoutes) this.config.userRoutes = {};
           this.config.userRoutes[msg.senderId] = provider;
+          // Clear model override when switching to built-in provider
+          if (this.config.userModelOverrides) {
+            delete this.config.userModelOverrides[msg.senderId];
+          }
+          const tip = Gateway.PROVIDER_TIPS[provider] || provider;
           await channel.send({
             targetId: msg.senderId,
-            text: `已切换到: ${provider}`,
+            text: `✓ ${tip}`,
             replyToken: msg.replyToken,
           });
         } else {
           await channel.send({
             targetId: msg.senderId,
-            text: `未知模型: ${arg}\n可用: ${[...this.providers.keys()].join(", ")}`,
+            text: `未知模型: ${arg}\n可用: ${[...this.providers.keys()].join(", ")}\n\n或使用第三方模型: /model <vendor/model>`,
             replyToken: msg.replyToken,
           });
         }
@@ -746,6 +798,7 @@ export class Gateway {
           text: [
             "wechat-ai 指令:",
             "/model [名称] - 切换AI模型",
+            "/model vendor/model - 第三方模型",
             "/skill [名称] - 切换技能 (off 关闭)",
             "/画 <描述> - AI生成图片",
             "/help - 显示帮助",
@@ -754,10 +807,39 @@ export class Gateway {
             "快捷切换模型:",
             "/cc → Claude  /qwen /deepseek /gpt 等",
             "",
+            "第三方模型 (需配置 OpenRouter Key):",
+            "/model google/gemini-2.5-pro",
+            "/model anthropic/claude-sonnet-4",
+            "/model meta-llama/llama-4-maverick",
+            "",
             "@ 快捷方式:",
             "@模型名 <问题> - 临时用指定模型",
             "@画图 <描述> - 生成图片",
           ].join("\n"),
+          replyToken: msg.replyToken,
+        });
+        break;
+      }
+
+      case "/guide":
+      case "/指南": {
+        const guide = [
+          "📌 快捷指南:",
+          "直接发消息即可对话",
+          "",
+          "切换模型:",
+          "/cc → Claude  /qwen /deepseek /gpt",
+          "",
+          "第三方模型 (需先配置 OpenRouter Key):",
+          "/model google/gemini-2.5-pro",
+          "/model anthropic/claude-sonnet-4",
+          "",
+          "/help 查看全部指令",
+          "@指南 重新查看本指南",
+        ].join("\n");
+        await channel.send({
+          targetId: msg.senderId,
+          text: guide,
           replyToken: msg.replyToken,
         });
         break;

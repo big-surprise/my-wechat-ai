@@ -34,16 +34,17 @@ const HELP = `
     wechat-ai set qwen sk-xxx        设置通义千问 Key
     wechat-ai set deepseek sk-xxx    设置 DeepSeek Key
     wechat-ai set claude sk-xxx      设置 Claude Key
+    wechat-ai set openrouter sk-xxx  设置 OpenRouter Key (第三方模型)
 
   \x1b[1m设置默认模型:\x1b[0m
     wechat-ai use qwen               默认使用 Qwen
     wechat-ai use deepseek           默认使用 DeepSeek
 
   \x1b[1m微信指令:\x1b[0m
-    /model             查看当前模型
-    /model qwen        切换到 Qwen
-    /model deepseek    切换到 DeepSeek
-    /help              显示帮助
+    /model                           查看当前模型
+    /model qwen                      切换到 Qwen
+    /model google/gemini-2.5-pro     第三方模型 (via OpenRouter)
+    /help                            显示帮助
 `;
 
 function printBanner(defaultProvider: string): void {
