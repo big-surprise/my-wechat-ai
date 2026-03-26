@@ -198,7 +198,12 @@ async function main() {
         process.exit(1);
       }
 
-      config.providers[provider]!.apiKey = apiKey;
+      // Strip smart quotes, BOM, whitespace that Windows clipboard may inject
+      const cleanKey = apiKey.replace(/[\u200B-\u200D\uFEFF\u201C\u201D\u2018\u2019\u00AB\u00BB"']/g, "").trim();
+      if (cleanKey !== apiKey) {
+        console.log("\x1b[33m⚠\x1b[0m 已自动清理 API Key 中的特殊引号字符");
+      }
+      config.providers[provider]!.apiKey = cleanKey;
       await saveConfig(config);
       console.log(`\x1b[32m✓\x1b[0m 已保存 ${provider} 的 API Key`);
       break;

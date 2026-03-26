@@ -5,6 +5,11 @@ const log = createLogger("claude");
 
 const DEFAULT_TOOLS = ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch"];
 
+/** Strip smart quotes, BOM, and whitespace that Windows clipboard may inject into API keys */
+function sanitizeKey(key: string): string {
+  return key.replace(/[\u200B-\u200D\uFEFF\u201C\u201D\u2018\u2019\u00AB\u00BB"']/g, "").trim();
+}
+
 export class ClaudeAgentProvider implements Provider {
   readonly name = "claude-agent";
   private config: ProviderConfig;
@@ -22,9 +27,9 @@ export class ClaudeAgentProvider implements Provider {
     const { query } = await import("@anthropic-ai/claude-agent-sdk");
 
     // Use project-configured API key if available, otherwise SDK falls back to ~/.claude
-    const apiKey = this.config.apiKey || process.env.ANTHROPIC_API_KEY;
-    if (apiKey) {
-      process.env.ANTHROPIC_API_KEY = apiKey;
+    const rawKey = this.config.apiKey || process.env.ANTHROPIC_API_KEY;
+    if (rawKey) {
+      process.env.ANTHROPIC_API_KEY = sanitizeKey(rawKey);
     }
 
     const allowedTools = options?.allowedTools

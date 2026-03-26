@@ -3,6 +3,11 @@ import type { Provider, ProviderOptions, ProviderConfig } from "../types.js";
 
 const log = createLogger("openai-compat");
 
+/** Strip smart quotes, BOM, and whitespace that Windows clipboard may inject into API keys */
+function sanitizeKey(key: string): string {
+  return key.replace(/[\u200B-\u200D\uFEFF\u201C\u201D\u2018\u2019\u00AB\u00BB"']/g, "").trim();
+}
+
 type ContentPart =
   | { type: "text"; text: string }
   | { type: "image_url"; image_url: { url: string } };
@@ -46,7 +51,7 @@ export class OpenAICompatibleProvider implements Provider {
     options?: ProviderOptions,
   ): Promise<string> {
     const baseUrl = this.config.baseUrl;
-    const apiKey = this.config.apiKey || process.env[this.config.apiKeyEnv as string || ""];
+    const apiKey = sanitizeKey(this.config.apiKey || process.env[this.config.apiKeyEnv as string || ""] || "");
     const model = options?.model || (this.config.model as string);
 
     if (!baseUrl) throw new Error(`${this.name}: baseUrl is required`);
