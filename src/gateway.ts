@@ -11,6 +11,7 @@ import type {
 } from "./types.js";
 import { WeixinChannel } from "./channels/weixin.js";
 import { ClaudeAgentProvider } from "./providers/claude-agent.js";
+import { ClawAgentProvider } from "./providers/claw-agent.js";
 import { OpenAICompatibleProvider } from "./providers/openai-compatible.js";
 import { McpManager } from "./mcp.js";
 import { transcribeFromUrl } from "./asr.js";
@@ -82,6 +83,9 @@ export class Gateway {
       switch (provConfig.type) {
         case "claude-agent":
           this.providers.set(name, new ClaudeAgentProvider(provConfig));
+          break;
+        case "claw-agent":
+          this.providers.set(name, new ClawAgentProvider(name, provConfig));
           break;
         case "openai-compatible":
           this.providers.set(name, new OpenAICompatibleProvider(name, provConfig));
@@ -810,11 +814,20 @@ export class Gateway {
             "第三方模型 (需配置 OpenRouter Key):",
             "/model google/gemini-2.5-pro",
             "/model anthropic/claude-sonnet-4",
-            "/model meta-llama/llama-4-maverick",
+            "/model xiaomi/mimo-v2-pro",
+            "",
+            "🆓 免费模型 (无需充值):",
+            "/model stepfun/step-3.5-flash:free",
+            "/model nvidia/nemotron-3-super-120b-a12b:free",
+            "",
+            "🤖 Agent 能力 (所有模型):",
+            "搜索网页 · 查天气 · 查资讯 · 读写文件 · 执行命令",
             "",
             "@ 快捷方式:",
             "@模型名 <问题> - 临时用指定模型",
             "@画图 <描述> - 生成图片",
+            "",
+            "📖 更多: github.com/anxiong2025/wechat-ai",
           ].join("\n"),
           replyToken: msg.replyToken,
         });
@@ -832,10 +845,15 @@ export class Gateway {
           "",
           "第三方模型 (需先配置 OpenRouter Key):",
           "/model google/gemini-2.5-pro",
-          "/model anthropic/claude-sonnet-4",
+          "/model xiaomi/mimo-v2-pro",
+          "",
+          "🆓 免费模型 (无需充值):",
+          "/model stepfun/step-3.5-flash:free",
+          "",
+          "🤖 所有模型均支持: 搜索 · 天气 · 资讯 · 文件 · 命令",
           "",
           "/help 查看全部指令",
-          "@指南 重新查看本指南",
+          "📖 更多: github.com/anxiong2025/wechat-ai",
         ].join("\n");
         await channel.send({
           targetId: msg.senderId,

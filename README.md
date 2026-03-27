@@ -14,7 +14,7 @@
 - **8+ 内置模型** — Claude、GPT、Gemini、Qwen、DeepSeek、MiniMax、GLM，一键切换
 - **300+ 第三方模型** — 通过 OpenRouter 接入，`/model vendor/model` 随时切换
 - **微信官方协议** — 基于 iLink Bot API（`ilinkai.weixin.qq.com`），非逆向、非第三方
-- **Claude Agent 模式** — 不只是聊天，还能执行代码、读写文件、搜索网页
+- **全模型 Agent 能力** — 不只是聊天，所有模型均支持搜索网页、读写文件、执行代码（由 [claw-agent-sdk](https://github.com/anxiong2025/claw-agent-sdk) 驱动）
 - **语音收发** — 语音消息自动转文字 (Whisper ASR)，支持语音回复 (TTS)
 - **图片生成** — `/画 <描述>` 直接在微信里生图
 - **图片理解** — 发图片自动切换到视觉模型分析
@@ -62,7 +62,7 @@ wechat-ai                        # 首次启动会弹出微信扫码
 npx wechat-ai
 
 # 从源码运行
-git clone https://github.com/anthropics/wechat-ai.git
+git clone https://github.com/anxiong2025/wechat-ai.git
 cd wechat-ai && npm install && npm run build && node dist/cli.js
 ```
 
@@ -94,7 +94,7 @@ wechat-ai update                 # 更新到最新版
 
 支持任何 OpenAI 兼容 API，编辑 `~/.wai/config.json` 即可添加。
 
-Claude 通过 [Agent SDK](https://github.com/anthropics/claude-agent-sdk-typescript) 接入，支持执行代码、读写文件、搜索网页，不只是聊天。
+所有模型均通过 [claw-agent-sdk](https://github.com/anxiong2025/claw-agent-sdk) 获得 Agent 能力，支持搜索网页、读写文件、执行代码。Claude 另外通过 [Agent SDK](https://github.com/anthropics/claude-agent-sdk-typescript) 接入，提供最强质量。
 
 ### 第三方模型 (OpenRouter)
 
@@ -125,6 +125,33 @@ wechat-ai set openrouter sk-or-xxx
 /help                                显示全部指令
 /ping                                检查状态
 ```
+
+### Agent 能力（所有模型）
+
+v0.4.0 起，所有模型均具备 Agent 能力，不只是对话：
+
+| 能力 | 示例 | 说明 |
+|------|------|------|
+| 🔍 搜索网页 | "今天深圳天气如何" | 自动搜索实时信息 |
+| 📰 查资讯 | "最新的 AI 行业动态" | 搜索国内外新闻 |
+| 📂 读取文件 | "读取 package.json 内容" | 读取服务器上的文件 |
+| ✏️ 写入文件 | "创建一个 hello.txt" | 创建或修改文件 |
+| 🔎 搜索文件 | "找到所有 .ts 文件" | 按模式匹配文件路径 |
+| 💻 执行命令 | "运行 npm test" | 执行 shell 命令 |
+| 🌐 抓取网页 | "抓取这个 URL 的内容" | 获取指定网页内容 |
+
+由 [claw-agent-sdk](https://github.com/anxiong2025/claw-agent-sdk) 提供，无需额外配置。
+
+### 免费第三方模型
+
+配置 OpenRouter Key 后，可使用免费模型：
+
+```
+/model stepfun/step-3.5-flash:free
+/model nvidia/nemotron-3-super-120b-a12b:free
+```
+
+更多免费模型见 [OpenRouter Models](https://openrouter.ai/models)（筛选 Prompt pricing: $0）。
 
 ## 高级配置
 
@@ -229,8 +256,9 @@ wechat-ai 网关
   ├── ASR / TTS 语音处理
   └── 模型路由
         │
-        ├── Claude Agent SDK（工具: Bash, 文件读写, Web 搜索）
-        └── OpenAI 兼容 API（Qwen, DeepSeek, GPT, Gemini, OpenRouter 300+）
+        ├── Claude Agent SDK（Claude 专属，最强质量）
+        └── claw-agent-sdk（Qwen, DeepSeek, GPT, Gemini, OpenRouter 300+）
+              └── 内置工具: 搜索, 文件读写, 命令执行, 网页抓取
 ```
 
 ### 技术栈
@@ -240,7 +268,7 @@ wechat-ai 网关
 | 语言 | TypeScript (ESM) |
 | 运行时 | Node.js 22+ |
 | 微信协议 | iLink Bot API（官方） |
-| AI 接入 | Claude Agent SDK + OpenAI 兼容 API |
+| AI 接入 | Claude Agent SDK + [claw-agent-sdk](https://github.com/anxiong2025/claw-agent-sdk) |
 | 工具扩展 | Model Context Protocol (MCP) |
 | 构建 | tsup |
 
@@ -259,7 +287,8 @@ src/
 │   └── weixin.ts             微信 iLink 协议实现
 └── providers/
     ├── claude-agent.ts       Claude Agent SDK 接入
-    └── openai-compatible.ts  通用 OpenAI 兼容 API
+    ├── claw-agent.ts         claw-agent-sdk 接入（全模型 Agent）
+    └── openai-compatible.ts  通用 OpenAI 兼容 API（兼容旧版）
 ```
 
 ## 作为库使用
@@ -296,6 +325,7 @@ await gw.start();
 - [x] 语音消息 (ASR / TTS)
 - [x] 图片理解（自动切换视觉模型）
 - [x] 图片生成 (`/画`)
+- [x] 全模型 Agent 能力 (claw-agent-sdk)
 - [ ] Web 管理面板
 - [ ] Telegram / Discord 渠道
 - [ ] 群聊支持
