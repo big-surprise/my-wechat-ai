@@ -56,6 +56,12 @@ const DEFAULT_CONFIG: WaiConfig = {
       model: "google/gemini-2.5-flash",
       apiKeyEnv: "OPENROUTER_API_KEY",
     },
+    "volcengine": {
+      type: "claw-agent",
+      baseUrl: "https://ark.cn-beijing.volces.com/api/coding/v3",
+      model: "ark-code-latest",
+      apiKeyEnv: "VOLCENGINE_API_KEY",
+    },
   },
   channels: {
     weixin: {
@@ -63,8 +69,24 @@ const DEFAULT_CONFIG: WaiConfig = {
       enabled: true,
     },
   },
+  gateway: {
+    debounceTextMs: 1500,
+    debounceMediaMs: 4000,
+  },
+  imageGeneration: {
+    provider: "gemini",
+    model: "gemini-2.5-flash-image",
+    timeout: 60_000,
+  },
+  imageUploadServices: ["catbox", "tmpfiles"],
   systemPrompt: "You are a helpful AI assistant. Always reply in the same language the user uses. Respond concisely.",
   chunkSize: 4000,
+  asr: {
+    language: "zh",
+  },
+  tts: {
+    timeout: 30_000,
+  },
   skills: {
     translator: {
       description: "中英翻译助手",

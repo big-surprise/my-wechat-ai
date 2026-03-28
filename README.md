@@ -1,20 +1,20 @@
-# wechat-ai
+# my-wechat-ai
 
 微信 AI 机器人 — 一条命令连接微信与任意 AI 模型。
 
 基于微信官方 iLink Bot API 构建，合规、稳定、不怕封号。
 
 <p align="center">
-  <img src="docs/screenshot.png" width="800" alt="wechat-ai screenshot" />
+  <img src="docs/screenshot.png" width="800" alt="my-wechat-ai screenshot" />
 </p>
 
 ## 特性
 
-- **一条命令启动** — `npx wechat-ai`，扫码即用，零配置门槛
+- **一条命令启动** — `npx my-wechat-ai`，扫码即用，零配置门槛
 - **8+ 内置模型** — Claude、GPT、Gemini、Qwen、DeepSeek、MiniMax、GLM，一键切换
 - **300+ 第三方模型** — 通过 OpenRouter 接入，`/model vendor/model` 随时切换
 - **微信官方协议** — 基于 iLink Bot API（`ilinkai.weixin.qq.com`），非逆向、非第三方
-- **全模型 Agent 能力** — 不只是聊天，所有模型均支持搜索网页、读写文件、执行代码（由 [claw-agent-sdk](https://github.com/anxiong2025/claw-agent-sdk) 驱动）
+- **全模型 Agent 能力** — 不只是聊天，所有模型均支持搜索网页、读写文件、执行代码（由 [my-claw-agent-sdk](https://github.com/big-surprise/my-claw-agent-sdk) 驱动）
 - **语音收发** — 语音消息自动转文字 (Whisper ASR)，支持语音回复 (TTS)
 - **图片生成** — `/画 <描述>` 直接在微信里生图
 - **图片理解** — 发图片自动切换到视觉模型分析
@@ -31,26 +31,26 @@
 ### 1. 安装
 
 ```bash
-npm i -g wechat-ai
+npm i -g my-wechat-ai
 ```
 
 ### 2. 设置 API Key（任选一个模型）
 
 ```bash
 # macOS / Linux
-wechat-ai set qwen sk-xxx        # 通义千问
-wechat-ai set deepseek sk-xxx    # DeepSeek
-wechat-ai set gemini AIza-xxx    # Gemini
+my-wechat-ai set qwen sk-xxx        # 通义千问
+my-wechat-ai set deepseek sk-xxx    # DeepSeek
+my-wechat-ai set gemini AIza-xxx    # Gemini
 
 # Windows（Key 需要加引号，避免特殊字符被 cmd 解析）
-wechat-ai set qwen "sk-xxx"
-wechat-ai set deepseek "sk-xxx"
+my-wechat-ai set qwen "sk-xxx"
+my-wechat-ai set deepseek "sk-xxx"
 ```
 
 ### 3. 启动
 
 ```bash
-wechat-ai                        # 首次启动会弹出微信扫码
+my-wechat-ai                        # 首次启动会弹出微信扫码
 ```
 
 扫码登录后，给微信机器人发消息即可开始对话。
@@ -59,49 +59,49 @@ wechat-ai                        # 首次启动会弹出微信扫码
 
 ```bash
 # 免安装体验
-npx wechat-ai
+npx my-wechat-ai
 
 # 从源码运行
-git clone https://github.com/anxiong2025/wechat-ai.git
-cd wechat-ai && npm install && npm run build && node dist/cli.js
+git clone https://github.com/big-surprise/my-wechat-ai.git
+cd my-wechat-ai && npm install && npm run build && node dist/cli.js
 ```
 
 ## 命令
 
 ```bash
-wechat-ai                        # 启动（首次自动弹出二维码）
-wechat-ai set <模型> <key>        # 保存 API Key
-wechat-ai use <模型>              # 设置默认模型
-wechat-ai config                 # 查看配置（Key 已脱敏）
-wechat-ai start                  # 后台运行（daemon 模式）
-wechat-ai stop                   # 停止后台进程
-wechat-ai logs                   # 查看后台日志
-wechat-ai update                 # 更新到最新版
+my-wechat-ai                        # 启动（首次自动弹出二维码）
+my-wechat-ai set <模型> <key>        # 保存 API Key
+my-wechat-ai use <模型>              # 设置默认模型
+my-wechat-ai config                 # 查看配置（Key 已脱敏）
+my-wechat-ai start                  # 后台运行（daemon 模式）
+my-wechat-ai stop                   # 停止后台进程
+my-wechat-ai logs                   # 查看后台日志
+my-wechat-ai update                 # 更新到最新版
 ```
 
 ## 支持模型
 
 | 模型 | 默认版本 | 设置 Key | 获取 Key |
 |------|---------|---------|---------|
-| 通义千问 (Qwen) | qwen-plus | `wechat-ai set qwen <key>` | [申请](https://bailian.console.aliyun.com/cn-beijing/?tab=model#/api-key) |
-| DeepSeek | deepseek-chat | `wechat-ai set deepseek <key>` | [申请](https://platform.deepseek.com/api_keys) |
-| Claude | claude-opus-4-6 (Agent) | `wechat-ai set claude <key>` | [申请](https://console.anthropic.com/settings/keys) |
-| GPT | gpt-4o | `wechat-ai set gpt <key>` | [申请](https://platform.openai.com/api-keys) |
-| Gemini | gemini-2.0-flash | `wechat-ai set gemini <key>` | [申请](https://aistudio.google.com/apikey) |
-| MiniMax | MiniMax-Text-01 | `wechat-ai set minimax <key>` | [申请](https://platform.minimaxi.com/user-center/basic-information/interface-key) |
-| 智谱 (GLM) | glm-4-plus | `wechat-ai set glm <key>` | [申请](https://open.bigmodel.cn/usercenter/apikeys) |
-| OpenRouter | 300+ 第三方模型 | `wechat-ai set openrouter <key>` | [申请](https://openrouter.ai/settings/keys) |
+| 通义千问 (Qwen) | qwen-plus | `my-wechat-ai set qwen <key>` | [申请](https://bailian.console.aliyun.com/cn-beijing/?tab=model#/api-key) |
+| DeepSeek | deepseek-chat | `my-wechat-ai set deepseek <key>` | [申请](https://platform.deepseek.com/api_keys) |
+| Claude | claude-opus-4-6 (Agent) | `my-wechat-ai set claude <key>` | [申请](https://console.anthropic.com/settings/keys) |
+| GPT | gpt-4o | `my-wechat-ai set gpt <key>` | [申请](https://platform.openai.com/api-keys) |
+| Gemini | gemini-2.0-flash | `my-wechat-ai set gemini <key>` | [申请](https://aistudio.google.com/apikey) |
+| MiniMax | MiniMax-Text-01 | `my-wechat-ai set minimax <key>` | [申请](https://platform.minimaxi.com/user-center/basic-information/interface-key) |
+| 智谱 (GLM) | glm-4-plus | `my-wechat-ai set glm <key>` | [申请](https://open.bigmodel.cn/usercenter/apikeys) |
+| OpenRouter | 300+ 第三方模型 | `my-wechat-ai set openrouter <key>` | [申请](https://openrouter.ai/settings/keys) |
 
 支持任何 OpenAI 兼容 API，编辑 `~/.wai/config.json` 即可添加。
 
-所有模型均通过 [claw-agent-sdk](https://github.com/anxiong2025/claw-agent-sdk) 获得 Agent 能力，支持搜索网页、读写文件、执行代码。Claude 另外通过 [Agent SDK](https://github.com/anthropics/claude-agent-sdk-typescript) 接入，提供最强质量。
+所有模型均通过 [my-claw-agent-sdk](https://github.com/big-surprise/my-claw-agent-sdk) 获得 Agent 能力，支持搜索网页、读写文件、执行代码。Claude 另外通过 [Agent SDK](https://github.com/anthropics/claude-agent-sdk-typescript) 接入，提供最强质量。
 
 ### 第三方模型 (OpenRouter)
 
 配置一个 [OpenRouter](https://openrouter.ai) Key 即可使用 300+ 模型，无需逐个申请：
 
 ```bash
-wechat-ai set openrouter sk-or-xxx
+my-wechat-ai set openrouter sk-or-xxx
 ```
 
 在微信中通过 `/model vendor/model` 切换：
@@ -128,7 +128,7 @@ wechat-ai set openrouter sk-or-xxx
 
 ### Agent 能力（所有模型）
 
-v0.4.0 起，所有模型均具备 Agent 能力：搜索网页、查天气资讯、读写文件、执行命令。由 [claw-agent-sdk](https://github.com/anxiong2025/claw-agent-sdk) 驱动，无需额外配置。
+v0.4.0 起，所有模型均具备 Agent 能力：搜索网页、查天气资讯、读写文件、执行命令。由 [my-claw-agent-sdk](https://github.com/big-surprise/my-claw-agent-sdk) 驱动，无需额外配置。
 
 详见 [完整使用指南](docs/guide.md#agent-能力)。
 
@@ -227,7 +227,7 @@ curl -X POST http://localhost:4800 \
   │
   ▼ (iLink Bot API — 微信官方协议)
   │
-wechat-ai 网关
+my-wechat-ai 网关
   ├── 会话管理（per-user 独立上下文）
   ├── 消息聚合（防抖合并连续消息）
   ├── 中间件链（Koa 风格洋葱模型）
@@ -236,20 +236,20 @@ wechat-ai 网关
   └── 模型路由
         │
         ├── Claude Agent SDK（Claude 专属，最强质量）
-        └── claw-agent-sdk（Qwen, DeepSeek, GPT, Gemini, OpenRouter 300+）
+        └── my-claw-agent-sdk（Qwen, DeepSeek, GPT, Gemini, OpenRouter 300+）
               └── 内置工具: 搜索, 文件读写, 命令执行, 网页抓取
 ```
 
 ### 技术栈
 
-| 组件 | 技术 |
-|------|------|
-| 语言 | TypeScript (ESM) |
-| 运行时 | Node.js 22+ |
-| 微信协议 | iLink Bot API（官方） |
-| AI 接入 | Claude Agent SDK + [claw-agent-sdk](https://github.com/anxiong2025/claw-agent-sdk) |
-| 工具扩展 | Model Context Protocol (MCP) |
-| 构建 | tsup |
+| 组件 | 技术                                                                                        |
+|------|-------------------------------------------------------------------------------------------|
+| 语言 | TypeScript (ESM)                                                                          |
+| 运行时 | Node.js 22+                                                                               |
+| 微信协议 | iLink Bot API（官方）                                                                         |
+| AI 接入 | Claude Agent SDK + [my-claw-agent-sdk](https://github.com/big-surprise/my-claw-agent-sdk) |
+| 工具扩展 | Model Context Protocol (MCP)                                                              |
+| 构建 | tsup                                                                                      |
 
 ## 项目结构
 
@@ -266,20 +266,20 @@ src/
 │   └── weixin.ts             微信 iLink 协议实现
 └── providers/
     ├── claude-agent.ts       Claude Agent SDK 接入
-    ├── claw-agent.ts         claw-agent-sdk 接入（全模型 Agent）
+    ├── claw-agent.ts         my-claw-agent-sdk 接入（全模型 Agent）
     └── openai-compatible.ts  通用 OpenAI 兼容 API（兼容旧版）
 ```
 
 ## 作为库使用
 
-wechat-ai 同时导出为 npm 库，可嵌入你自己的项目：
+my-wechat-ai 同时导出为 npm 库，可嵌入你自己的项目：
 
 ```bash
-npm install wechat-ai
+npm install my-wechat-ai
 ```
 
 ```typescript
-import { Gateway } from "wechat-ai";
+import { Gateway } from "my-wechat-ai";
 
 const gw = new Gateway(config);
 gw.use(async (ctx, next) => {
@@ -304,7 +304,7 @@ await gw.start();
 - [x] 语音消息 (ASR / TTS)
 - [x] 图片理解（自动切换视觉模型）
 - [x] 图片生成 (`/画`)
-- [x] 全模型 Agent 能力 (claw-agent-sdk)
+- [x] 全模型 Agent 能力 (my-claw-agent-sdk)
 - [ ] Web 管理面板
 - [ ] Telegram / Discord 渠道
 - [ ] 群聊支持

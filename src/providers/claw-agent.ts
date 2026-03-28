@@ -1,11 +1,11 @@
-import { agent } from "claw-agent-sdk";
+import { agent } from "my-claw-agent-sdk";
 import { createLogger } from "../logger.js";
 import type { Provider, ProviderConfig, ProviderOptions, ProviderResponse } from "../types.js";
 
 const log = createLogger("claw-agent");
 
 /**
- * Claw Agent Provider — 通过 claw-agent-sdk 让任何模型获得 Agent 能力
+ * Claw Agent Provider — 通过 my-claw-agent-sdk 让任何模型获得 Agent 能力
  * 替代 openai-compatible，内置搜索、文件操作等工具
  */
 export class ClawAgentProvider implements Provider {

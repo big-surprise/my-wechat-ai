@@ -19,9 +19,6 @@ import { textToSpeech } from "./tts.js";
 
 const log = createLogger("网关");
 
-const DEBOUNCE_MS = 1500;
-const DEBOUNCE_MEDIA_MS = 4000;
-
 interface MessageBuffer {
   messages: InboundMessage[];
   timer: ReturnType<typeof setTimeout>;
@@ -50,12 +47,29 @@ export class Gateway {
     gemini: "Gemini",
     minimax: "MiniMax",
     glm: "智谱 GLM",
+    volcengine: "火山引擎Coding Plan · 智能调度模型",
     openrouter: "OpenRouter · 300+ 第三方模型",
   };
   // Webhook HTTP server
   private webhookServer: Server | null = null;
   // MCP client manager
   private mcp = new McpManager();
+
+  /** Get debounce delay for text or media message */
+  private getDebounceDelay(hasMedia: boolean): number {
+    if (hasMedia) {
+      return this.config.gateway?.debounceMediaMs ?? 4000;
+    }
+    return this.config.gateway?.debounceTextMs ?? 1500;
+  }
+
+
+  /** Get command alias mapping */
+  private getCommandAliases(): Record<string, string> {
+    const defaultAliases: Record<string, string> = { "/cc": "claude" };
+    const merged = { ...defaultAliases, ...this.config.gateway?.commandAliases };
+    return merged;
+  }
 
   constructor(config: WaiConfig) {
     this.config = config;
@@ -191,8 +205,8 @@ export class Gateway {
     // Debounce: accumulate messages within time window
     // Use longer window for media messages (user likely typing a follow-up)
     const existing = this.buffers.get(key);
-    const hasMedia = msg.media?.length || existing?.messages.some((m) => m.media?.length);
-    const delay = hasMedia ? DEBOUNCE_MEDIA_MS : DEBOUNCE_MS;
+    const hasMedia = !!(msg.media?.length || existing?.messages.some((m) => m.media?.length));
+    const delay = this.getDebounceDelay(hasMedia);
     if (existing) {
       clearTimeout(existing.timer);
       existing.messages.push(msg);
@@ -418,8 +432,17 @@ export class Gateway {
     }
     return null;
   }
-
   private async generateImage(prompt: string): Promise<{ dataUrl: string; text?: string } | null> {
+    const providerName = this.config.imageGeneration?.provider || "gemini";
+    const model = this.config.imageGeneration?.model || "gemini-2.5-flash-image";
+    const timeout = this.config.imageGeneration?.timeout || 60_000;
+
+    // Currently only gemini is supported for image generation
+    if (providerName !== "gemini") {
+      log.error(`图片生成: 暂不支持 provider "${providerName}"，仅支持 gemini`);
+      return null;
+    }
+
     const geminiKey = this.config.providers.gemini?.apiKey
       || process.env[this.config.providers.gemini?.apiKeyEnv as string || ""]
       || this.config.tts?.apiKey; // Gemini TTS key as fallback
@@ -429,7 +452,6 @@ export class Gateway {
       return null;
     }
 
-    const model = "gemini-2.5-flash-image";
     log.info(`生成图片: "${prompt.slice(0, 50)}..." (model: ${model})`);
 
     const res = await fetch(
@@ -443,7 +465,7 @@ export class Gateway {
             responseModalities: ["TEXT", "IMAGE"],
           },
         }),
-        signal: AbortSignal.timeout(60_000),
+        signal: AbortSignal.timeout(timeout),
       },
     );
 
@@ -630,8 +652,8 @@ export class Gateway {
     const arg = parts[1];
 
     // Shortcut: /cc → claude, /模型名 → switch model directly
-    const ALIASES: Record<string, string> = { "/cc": "claude" };
-    const aliasTarget = ALIASES[cmd] || (cmd.startsWith("/") && this.providers.has(cmd.slice(1)) ? cmd.slice(1) : null);
+    const aliases = this.getCommandAliases();
+    const aliasTarget = aliases[cmd] || (cmd.startsWith("/") && this.providers.has(cmd.slice(1)) ? cmd.slice(1) : null);
     if (aliasTarget && this.providers.has(aliasTarget)) {
       if (!this.config.userRoutes) this.config.userRoutes = {};
       this.config.userRoutes[msg.senderId] = aliasTarget;
@@ -827,7 +849,7 @@ export class Gateway {
             "@模型名 <问题> - 临时用指定模型",
             "@画图 <描述> - 生成图片",
             "",
-            "📖 更多: https://github.com/anxiong2025/wechat-ai/blob/main/docs/guide.md",
+            "📖 更多: https://github.com/big-surprise/my-wechat-ai/blob/main/docs/guide.md",
           ].join("\n"),
           replyToken: msg.replyToken,
         });
