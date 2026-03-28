@@ -15,6 +15,8 @@ export interface TtsConfig {
   voice?: string;
   /** Max characters for voice reply (longer text falls back to text) */
   maxChars?: number;
+  /** Request timeout in ms (default: 30000) */
+  timeout?: number;
 }
 
 const DEFAULT_MAX_CHARS = 300;
@@ -52,6 +54,7 @@ async function openaiTts(text: string, apiKey: string, config: TtsConfig): Promi
     const baseUrl = (config.baseUrl || "https://api.openai.com/v1").replace(/\/$/, "");
     const model = config.model || "tts-1";
     const voice = config.voice || "alloy";
+    const timeout = config.timeout || 30_000;
 
     log.info(`调用 TTS (${text.length} 字, model: ${model}, voice: ${voice})...`);
 
@@ -62,7 +65,7 @@ async function openaiTts(text: string, apiKey: string, config: TtsConfig): Promi
         "Authorization": `Bearer ${apiKey}`,
       },
       body: JSON.stringify({ model, input: text, voice, response_format: "mp3" }),
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.timeout(timeout),
     });
 
     if (!res.ok) {
@@ -86,6 +89,7 @@ async function geminiTts(text: string, apiKey: string, config: TtsConfig): Promi
   try {
     const model = config.model || "gemini-2.5-flash-preview-tts";
     const voice = config.voice || "Kore";
+    const timeout = config.timeout || 30_000;
 
     log.info(`调用 Gemini TTS (${text.length} 字, model: ${model}, voice: ${voice})...`);
 
@@ -105,7 +109,7 @@ async function geminiTts(text: string, apiKey: string, config: TtsConfig): Promi
             },
           },
         }),
-        signal: AbortSignal.timeout(30_000),
+        signal: AbortSignal.timeout(timeout),
       },
     );
 

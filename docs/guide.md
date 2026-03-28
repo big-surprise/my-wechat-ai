@@ -66,6 +66,7 @@ wechat-ai set openrouter sk-or-xxx
 /model anthropic/claude-sonnet-4     # Claude Sonnet
 /model xiaomi/mimo-v2-pro            # 小米 MiMo
 /model openai/gpt-5.4                # GPT-5.4
+/model volcengine/ark-code-latest    # 火山引擎Coding Plan 智能调度模型
 ```
 
 ### 免费模型（无需充值）
@@ -123,7 +124,7 @@ AI 汇总信息 → 返回给你完整的天气报告
 | `grep` | 按正则搜索文件内容 |
 | `bash` | 执行 shell 命令（有安全限制） |
 
-由 [claw-agent-sdk](https://github.com/anxiong2025/claw-agent-sdk) 提供，无需额外配置。
+由 [my-claw-agent-sdk](https://github.com/big-surprise/my-claw-agent-sdk) 提供，无需额外配置。
 
 ---
 
@@ -215,6 +216,7 @@ AI 回复自动合成语音发送。
 | Gemini | `/gemini` | 低 | 多模态、长上下文 |
 | MiniMax | `/model minimax` | 低 | 中文对话 |
 | GLM | `/model glm` | 低 | 中文对话 |
+| volcengine | `/model ark-code-latest` | 低 | 中文对话 |
 | OpenRouter | `/model vendor/model` | 按模型定价 | 600+ 模型任选 |
 
 ### 获取 API Key
@@ -226,6 +228,7 @@ AI 回复自动合成语音发送。
 | Claude | [Anthropic Console](https://console.anthropic.com/settings/keys) |
 | GPT | [OpenAI Platform](https://platform.openai.com/api-keys) |
 | Gemini | [Google AI Studio](https://aistudio.google.com/apikey) |
+| Volcengine | [火山引擎Coding Plan](https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey) |
 | OpenRouter | [OpenRouter](https://openrouter.ai/settings/keys) |
 
 ---
@@ -295,4 +298,4 @@ A: 可以。用 `/model` 切换，每个用户独立记录当前模型。
 A: 能用，但免费模型可能有限流。建议用千问或 DeepSeek，价格极低且稳定。
 
 **Q: Claude 和其他模型有什么区别？**
-A: `/cc` 走 Claude 官方 Agent SDK，质量最强。其他模型走 claw-agent-sdk，能力相同但效果取决于模型本身的智能程度。
+A: `/cc` 走 Claude 官方 Agent SDK，质量最强。其他模型走 my-claw-agent-sdk，能力相同但效果取决于模型本身的智能程度。

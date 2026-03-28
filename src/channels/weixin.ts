@@ -8,10 +8,10 @@ import type { Channel, InboundMessage, OutboundMessage, ChannelConfig, MediaAtta
 
 const log = createLogger("weixin");
 
+const CHANNEL_VERSION = "1.0.3";
 const DEFAULT_BASE_URL = "https://ilinkai.weixin.qq.com";
 const CDN_BASE_URL = "https://novac2c.cdn.weixin.qq.com/c2c";
-const CHANNEL_VERSION = "1.0.3";
-const API_TIMEOUT_MS = 15_000;
+const DEFAULT_API_TIMEOUT_MS = 15_000;
 
 // ── Message constants (from openclaw-weixin protocol) ──
 const MessageType = { USER: 1, BOT: 2 } as const;
@@ -94,8 +94,12 @@ export class WeixinChannel implements Channel {
   // Whether startup greeting was already sent proactively
   private startupGreetingSent = false;
 
+  // Configured values with defaults
+  private readonly apiTimeoutMs: number;
+
   constructor(config: ChannelConfig) {
     this.config = config;
+    this.apiTimeoutMs = (this.config.apiTimeoutMs as number) || DEFAULT_API_TIMEOUT_MS;
   }
 
   // ── Auth ──
@@ -385,7 +389,7 @@ export class WeixinChannel implements Channel {
         this.account.baseUrl,
         "ilink/bot/sendmessage",
         body,
-        { timeout: API_TIMEOUT_MS },
+        { timeout: this.apiTimeoutMs },
       );
 
       if (res.ret && res.ret !== 0) {
@@ -428,7 +432,7 @@ export class WeixinChannel implements Channel {
         this.account.baseUrl,
         "ilink/bot/sendmessage",
         body,
-        { timeout: API_TIMEOUT_MS },
+        { timeout: this.apiTimeoutMs },
       );
 
       if (res.ret && res.ret !== 0) {
@@ -668,7 +672,7 @@ export class WeixinChannel implements Channel {
     }
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), opts.timeout || API_TIMEOUT_MS);
+    const timer = setTimeout(() => controller.abort(), opts.timeout || this.apiTimeoutMs);
 
     try {
       const res = await fetch(url, {

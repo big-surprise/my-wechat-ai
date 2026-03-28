@@ -198,12 +198,41 @@ export interface WaiConfig {
   /** MCP server configurations */
   mcpServers?: Record<string, McpServerConfig>;
 
+  /** Gateway configuration */
+  gateway?: {
+    /** Debounce time for text messages in ms (default: 1500) */
+    debounceTextMs?: number;
+    /** Debounce time for messages with media in ms (default: 4000) */
+    debounceMediaMs?: number;
+    /** List of providers that support vision/image inputs */
+    visionProviders?: string[];
+    /** Custom command aliases: alias -> providerName */
+    commandAliases?: Record<string, string>;
+    /** Provider display tips for UI */
+    providerTips?: Record<string, string>;
+  };
+
+  /** Image generation configuration */
+  imageGeneration?: {
+    /** Provider to use for image generation (default: "gemini") */
+    provider?: string;
+    /** Model name for image generation */
+    model?: string;
+    /** Request timeout in ms (default: 60000) */
+    timeout?: number;
+  };
+
+  /** Image upload services for generated images (ordered by preference) */
+  imageUploadServices?: Array<"catbox" | "tmpfiles">;
+
   /** ASR (speech-to-text) config for voice messages */
   asr?: {
     provider?: "whisper" | "disabled";
     apiKey?: string;
     baseUrl?: string;
     model?: string;
+    /** Language for transcription (ISO 639-1 code, default: "zh") */
+    language?: string;
   };
 
   /** TTS (text-to-speech) config for voice replies */
@@ -214,6 +243,8 @@ export interface WaiConfig {
     model?: string;
     voice?: string;
     maxChars?: number;
+    /** Request timeout in ms (default: 30000) */
+    timeout?: number;
   };
 }
 

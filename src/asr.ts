@@ -11,6 +11,8 @@ export interface AsrConfig {
   baseUrl?: string;
   /** Whisper model (default: "whisper-1") */
   model?: string;
+  /** Language for transcription (ISO 639-1 code, default: "zh") */
+  language?: string;
 }
 
 /**
@@ -62,7 +64,11 @@ export async function transcribeFromUrl(
     const blob = new Blob([audioBuffer], { type: contentType || "audio/wav" });
     formData.append("file", blob, `audio.${ext}`);
     formData.append("model", model);
-    formData.append("language", "zh");
+    if (config.language) {
+      formData.append("language", config.language);
+    } else {
+      formData.append("language", "zh");
+    }
 
     log.info(`调用 Whisper ASR (${audioBuffer.length} bytes, ${ext})...`);
 
