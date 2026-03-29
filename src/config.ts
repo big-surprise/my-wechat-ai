@@ -109,7 +109,7 @@ const DEFAULT_CONFIG: WaiConfig = {
       timeout: 30000,
     },
     web_search: {
-      timeout: 20000,
+      timeout: 30000,
     },
   },
 };
