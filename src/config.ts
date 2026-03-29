@@ -101,6 +101,17 @@ const DEFAULT_CONFIG: WaiConfig = {
       systemPrompt: "You are a skilled writer. Help with writing, editing, and polishing text. Match the user's language.",
     },
   },
+  tools: {
+    bash: {
+      timeout: 120000,
+    },
+    web_fetch: {
+      timeout: 30000,
+    },
+    web_search: {
+      timeout: 20000,
+    },
+  },
 };
 
 export async function ensureDir(dir: string) {
