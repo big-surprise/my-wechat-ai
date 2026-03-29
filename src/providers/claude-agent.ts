@@ -1,5 +1,5 @@
 import { createLogger } from "../logger.js";
-import type { Provider, ProviderOptions, ProviderConfig } from "../types.js";
+import type { Provider, ProviderOptions, ProviderConfig, ToolConfig } from "../types.js";
 
 const log = createLogger("claude");
 
@@ -13,10 +13,12 @@ function sanitizeKey(key: string): string {
 export class ClaudeAgentProvider implements Provider {
   readonly name = "claude-agent";
   private config: ProviderConfig;
+  private toolConfig?: ToolConfig;
   private sessions = new Map<string, string>(); // userId -> sessionId
 
-  constructor(config: ProviderConfig) {
+  constructor(config: ProviderConfig, toolConfig?: ToolConfig) {
     this.config = config;
+    this.toolConfig = toolConfig;
   }
 
   async query(
@@ -57,6 +59,11 @@ export class ClaudeAgentProvider implements Provider {
 
     if (options?.systemPrompt) {
       sdkOptions.systemPrompt = options.systemPrompt;
+    }
+
+    // Pass tool configuration from config file
+    if (this.toolConfig) {
+      sdkOptions.toolConfig = this.toolConfig;
     }
 
     log.info(`Querying Claude (session: ${sessionId.slice(0, 8)}...)`);

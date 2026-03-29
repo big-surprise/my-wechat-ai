@@ -217,6 +217,35 @@ curl -X POST http://localhost:4800 \
 }
 ```
 
+### 工具配置 (Agent)
+
+细粒度控制 Agent 工具，可以只允许某些工具、禁止某些工具，或配置工具参数：
+
+```json
+{
+  "tools": {
+    "allow": ["Read", "Glob", "Grep", "Bash"],
+    "deny": ["WebSearch", "WebFetch"],
+    "bash": {
+      "timeout": 180_000
+    },
+    "web_fetch": {
+      "timeout": 30_000
+    },
+    "web_search": {
+      "timeout": 20_000
+    }
+  }
+}
+```
+
+**配置项说明：**
+- `allow`: string[] - 只允许列出的工具可用
+- `deny`: string[] - 禁止列出的工具
+- `bash.timeout`: number - Bash 命令超时（毫秒）
+- `web_fetch.timeout`: number - 网页抓取超时（毫秒）
+- `web_search.timeout`: number - 网页搜索超时（毫秒）
+
 ## 架构
 
 ```

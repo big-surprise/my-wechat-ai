@@ -164,6 +164,8 @@ export interface SkillConfig {
   provider?: string;
 }
 
+export type ToolConfig = import("my-claw-agent-sdk").ToolConfig;
+
 export interface WaiConfig {
   /** Default AI provider to use */
   defaultProvider: string;
@@ -185,6 +187,9 @@ export interface WaiConfig {
 
   /** Skill presets */
   skills?: Record<string, SkillConfig>;
+
+  /** Tool-specific configuration */
+  tools?: ToolConfig;
 
   /** Global system prompt */
   systemPrompt?: string;

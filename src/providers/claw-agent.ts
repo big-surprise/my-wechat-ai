@@ -1,6 +1,6 @@
 import { agent } from "my-claw-agent-sdk";
 import { createLogger } from "../logger.js";
-import type { Provider, ProviderConfig, ProviderOptions, ProviderResponse } from "../types.js";
+import type { Provider, ProviderConfig, ProviderOptions, ProviderResponse, ToolConfig } from "../types.js";
 
 const log = createLogger("claw-agent");
 
@@ -11,10 +11,12 @@ const log = createLogger("claw-agent");
 export class ClawAgentProvider implements Provider {
   readonly name: string;
   private config: ProviderConfig;
+  private toolConfig?: ToolConfig;
 
-  constructor(name: string, config: ProviderConfig) {
+  constructor(name: string, config: ProviderConfig, toolConfig?: ToolConfig) {
     this.name = name;
     this.config = config;
+    this.toolConfig = toolConfig;
   }
 
   async query(
@@ -37,7 +39,7 @@ export class ClawAgentProvider implements Provider {
         apiKey,
         model,
       },
-      tools: true,
+      tools: this.toolConfig ?? true,
       maxTurns: 10,
       maxTokens: (options?.maxTokens as number) || (this.config.maxTokens as number) || 4096,
       systemPrompt: options?.systemPrompt || (this.config.systemPrompt as string) || undefined,
@@ -78,7 +80,7 @@ export class ClawAgentProvider implements Provider {
         apiKey,
         model,
       },
-      tools: true,
+      tools: this.toolConfig ?? true,
       maxTurns: 10,
       maxTokens: (options?.maxTokens as number) || (this.config.maxTokens as number) || 4096,
       systemPrompt: options?.systemPrompt || (this.config.systemPrompt as string) || undefined,

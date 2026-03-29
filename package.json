@@ -4,7 +4,7 @@
   "description": "WeChat AI Bot — Bridge WeChat to Claude, Qwen, DeepSeek and more",
   "type": "module",
   "bin": {
-    "wechat-ai": "./dist/cli.js"
+    "my-wechat-ai": "./dist/cli.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

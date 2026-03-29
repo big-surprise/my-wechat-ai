@@ -96,10 +96,10 @@ export class Gateway {
     for (const [name, provConfig] of Object.entries(this.config.providers)) {
       switch (provConfig.type) {
         case "claude-agent":
-          this.providers.set(name, new ClaudeAgentProvider(provConfig));
+          this.providers.set(name, new ClaudeAgentProvider(provConfig, this.config.tools));
           break;
         case "claw-agent":
-          this.providers.set(name, new ClawAgentProvider(name, provConfig));
+          this.providers.set(name, new ClawAgentProvider(name, provConfig, this.config.tools));
           break;
         case "openai-compatible":
           this.providers.set(name, new OpenAICompatibleProvider(name, provConfig));
