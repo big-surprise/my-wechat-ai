@@ -16,35 +16,29 @@ const VERSION = pkg.version as string;
 const log = createLogger("cli");
 
 const HELP = `
-  \x1b[1mwechat-ai\x1b[0m — WeChat AI Bot
+  \x1b[1mmy-wechat-ai\x1b[0m — WeChat AI Bot
 
   \x1b[1m命令:\x1b[0m
-    wechat-ai                        启动 (首次自动扫码登录)
-    wechat-ai start                  后台运行 (daemon 模式)
-    wechat-ai stop                   停止后台进程
-    wechat-ai logs                   查看后台日志
-    wechat-ai logout                 退出登录 (清除微信账号)
-    wechat-ai set <provider> <key>   设置模型 API Key
-    wechat-ai use <provider>         设置默认模型
-    wechat-ai config                 查看当前配置
-    wechat-ai update                 更新到最新版
-    wechat-ai help                   显示帮助
+    my-wechat-ai                        启动 (首次自动扫码登录)
+    my-wechat-ai start                  后台运行 (daemon 模式)
+    my-wechat-ai stop                   停止后台进程
+    my-wechat-ai logs                   查看后台日志
+    my-wechat-ai logout                 退出登录 (清除微信账号)
+    my-wechat-ai set <provider> <key>   设置模型 API Key
+    my-wechat-ai use <provider>         设置默认模型
+    my-wechat-ai config                 查看当前配置
+    my-wechat-ai update                 更新到最新版
+    my-wechat-ai help                   显示帮助
 
   \x1b[1m设置 API Key:\x1b[0m
-    wechat-ai set qwen sk-xxx        设置通义千问 Key
-    wechat-ai set deepseek sk-xxx    设置 DeepSeek Key
-    wechat-ai set claude sk-xxx      设置 Claude Key
-    wechat-ai set openrouter sk-xxx  设置 OpenRouter Key (第三方模型)
+    my-wechat-ai set qwen sk-xxx        设置通义千问 Key
+    my-wechat-ai set deepseek sk-xxx    设置 DeepSeek Key
+    my-wechat-ai set claude sk-xxx      设置 Claude Key
+    my-wechat-ai set openrouter sk-xxx  设置 OpenRouter Key (第三方模型)
 
   \x1b[1m设置默认模型:\x1b[0m
-    wechat-ai use qwen               默认使用 Qwen
-    wechat-ai use deepseek           默认使用 DeepSeek
-
-  \x1b[1m微信指令:\x1b[0m
-    /model                           查看当前模型
-    /model qwen                      切换到 Qwen
-    /model google/gemini-2.5-pro     第三方模型 (via OpenRouter)
-    /help                            显示帮助
+    my-wechat-ai use qwen               默认使用 Qwen
+    my-wechat-ai use deepseek           默认使用 DeepSeek
 `;
 
 function printBanner(defaultProvider: string): void {
@@ -133,7 +127,7 @@ async function autoUpdate(currentVersion: string): Promise<void> {
 
   try {
     const { execSync } = await import("node:child_process");
-    const latest = execSync("npm view wechat-ai version", {
+    const latest = execSync("npm view my-wechat-ai version", {
       encoding: "utf-8",
       timeout: 5000,
       stdio: ["pipe", "pipe", "ignore"],
@@ -151,7 +145,7 @@ async function autoUpdate(currentVersion: string): Promise<void> {
     if (!isNewer) return;
 
     console.log(`\x1b[36m⟳\x1b[0m 发现新版本 v${currentVersion} → v${latest}，正在更新...`);
-    execSync("npm i -g wechat-ai@latest", { stdio: "inherit", timeout: 60000 });
+    execSync("npm i -g my-wechat-ai@latest", { stdio: "inherit", timeout: 60000 });
     console.log(`\x1b[32m✓\x1b[0m 更新完成，正在重启...\n`);
 
     // Re-exec with the new version
@@ -173,7 +167,7 @@ async function main() {
   setLogLevel(logLevel);
 
   if (command === "--version" || command === "-v") {
-    console.log(`wechat-ai v${VERSION}`);
+    console.log(`my-wechat-ai v${VERSION}`);
     process.exit(0);
   }
 
@@ -189,11 +183,11 @@ async function main() {
       const provider = args[1];
       const apiKey = args[2];
 
-      if (!provider || !apiKey) {
-        console.log("用法: wechat-ai set <provider> <key>");
-        console.log("示例: wechat-ai set qwen sk-xxx");
-        process.exit(1);
-      }
+       if (!provider || !apiKey) {
+         console.log("用法: my-wechat-ai set <provider> <key>");
+         console.log("示例: my-wechat-ai set qwen sk-xxx");
+         process.exit(1);
+       }
 
       if (!config.providers[provider]) {
         console.log(`未知模型: ${provider}`);
@@ -240,40 +234,40 @@ async function main() {
       break;
     }
 
-    case "update": {
-      const { execSync } = await import("node:child_process");
-      console.log(`正在更新 wechat-ai... (当前 v${VERSION})`);
-      try {
-        execSync("npm i -g wechat-ai@latest", { stdio: "inherit" });
-        // Read the newly installed version
-        let newVersion = "latest";
-        try {
-          newVersion = execSync("npm info wechat-ai version", { encoding: "utf-8" }).trim();
-        } catch { /* ignore */ }
-        console.log(`\x1b[32m✓\x1b[0m 更新完成 v${VERSION} → v${newVersion}`);
-      } catch {
-        console.error("\x1b[31m✗\x1b[0m 更新失败，请手动执行: npm i -g wechat-ai@latest");
-        process.exit(1);
-      }
-      break;
-    }
+     case "update": {
+       const { execSync } = await import("node:child_process");
+       console.log(`正在更新 my-wechat-ai... (当前 v${VERSION})`);
+       try {
+         execSync("npm i -g my-wechat-ai@latest", { stdio: "inherit" });
+         // Read the newly installed version
+         let newVersion = "latest";
+         try {
+           newVersion = execSync("npm info my-wechat-ai version", { encoding: "utf-8" }).trim();
+         } catch { /* ignore */ }
+         console.log(`\x1b[32m✓\x1b[0m 更新完成 v${VERSION} → v${newVersion}`);
+       } catch {
+         console.error("\x1b[31m✗\x1b[0m 更新失败，请手动执行: npm i -g my-wechat-ai@latest");
+         process.exit(1);
+       }
+       break;
+     }
 
     case "start": {
       const pidFile = join(getDataDir(), "daemon.pid");
       const logFile = join(getDataDir(), "daemon.log");
 
-      if (existsSync(pidFile)) {
-        const oldPid = parseInt(readFileSync(pidFile, "utf-8").trim(), 10);
-        try {
-          process.kill(oldPid, 0);
-          console.log(`\x1b[33m⚠\x1b[0m 已有进程在运行 (PID: ${oldPid})`);
-          console.log(`  停止: wechat-ai stop`);
-          console.log(`  日志: wechat-ai logs`);
-          process.exit(1);
-        } catch {
-          unlinkSync(pidFile);
-        }
-      }
+       if (existsSync(pidFile)) {
+         const oldPid = parseInt(readFileSync(pidFile, "utf-8").trim(), 10);
+         try {
+           process.kill(oldPid, 0);
+           console.log(`\x1b[33m⚠\x1b[0m 已有进程在运行 (PID: ${oldPid})`);
+           console.log(`  停止: my-wechat-ai stop`);
+           console.log(`  日志: my-wechat-ai logs`);
+           process.exit(1);
+         } catch {
+           unlinkSync(pidFile);
+         }
+       }
 
       const { spawn } = await import("node:child_process");
       const { openSync } = await import("node:fs");
@@ -290,9 +284,9 @@ async function main() {
       writeFileSync(pidFile, String(child.pid));
       child.unref();
 
-      console.log(`\x1b[32m✓\x1b[0m 已在后台启动 (PID: ${child.pid})`);
-      console.log(`  日志: wechat-ai logs`);
-      console.log(`  停止: wechat-ai stop`);
+       console.log(`\x1b[32m✓\x1b[0m 已在后台启动 (PID: ${child.pid})`);
+       console.log(`  日志: my-wechat-ai logs`);
+       console.log(`  停止: my-wechat-ai stop`);
       break;
     }
 
@@ -402,10 +396,10 @@ async function main() {
 
       printBanner(configured.length > 0 ? config.defaultProvider : "");
 
-      if (configured.length === 0) {
-        console.log(`\x1b[2m  尚未配置 API Key，请运行 wechat-ai set <模型> <key>\x1b[0m`);
-        console.log();
-      } else {
+       if (configured.length === 0) {
+         console.log(`\x1b[2m  尚未配置 API Key，请运行 my-wechat-ai set <模型> <key>\x1b[0m`);
+         console.log();
+       } else {
         console.log(`\x1b[32m✓\x1b[0m 可用模型: ${configured.join(", ")}`);
         console.log();
       }
